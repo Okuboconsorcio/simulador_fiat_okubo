@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 
 import pandas as pd
@@ -28,10 +29,66 @@ def percentual(valor: Decimal | float | int) -> str:
     return f"{float(valor) * 100:.2f}%".replace(".", ",")
 
 
+def formatar_percentual_input(valor: Decimal | float | int, casas_decimais: int = 2) -> str:
+    texto = f"{float(valor):,.{casas_decimais}f}%"
+    return texto.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
 def inteiro(valor: Decimal | float | int | str) -> str:
     if isinstance(valor, str):
         return valor
     return f"{int(valor):,}".replace(",", ".")
+
+
+def parse_numero_brasileiro(texto: str) -> float:
+    valor = re.sub(r"[^0-9,.-]", "", str(texto or "").strip())
+
+    if not valor:
+        return 0.0
+
+    if "," in valor:
+        valor = valor.replace(".", "").replace(",", ".")
+    elif "." in valor:
+        partes = valor.split(".")
+        if len(partes) > 1 and len(partes[-1]) == 3:
+            valor = "".join(partes)
+
+    try:
+        return max(0.0, float(valor))
+    except ValueError:
+        return 0.0
+
+
+def normalizar_campo_moeda(chave: str) -> None:
+    st.session_state[chave] = moeda(parse_numero_brasileiro(st.session_state.get(chave, "")))
+
+
+def normalizar_campo_percentual(chave: str, casas_decimais: int = 2) -> None:
+    st.session_state[chave] = formatar_percentual_input(
+        parse_numero_brasileiro(st.session_state.get(chave, "")),
+        casas_decimais,
+    )
+
+
+def campo_monetario(rotulo: str, chave: str, valor_inicial: float) -> float:
+    if chave not in st.session_state:
+        st.session_state[chave] = moeda(valor_inicial)
+
+    texto = st.text_input(rotulo, key=chave, on_change=normalizar_campo_moeda, args=(chave,))
+    return parse_numero_brasileiro(texto)
+
+
+def campo_percentual(rotulo: str, chave: str, valor_inicial: float, casas_decimais: int = 2) -> float:
+    if chave not in st.session_state:
+        st.session_state[chave] = formatar_percentual_input(valor_inicial, casas_decimais)
+
+    texto = st.text_input(
+        rotulo,
+        key=chave,
+        on_change=normalizar_campo_percentual,
+        args=(chave, casas_decimais),
+    )
+    return parse_numero_brasileiro(texto) / 100
 
 
 def aplicar_estilo() -> None:
@@ -206,9 +263,16 @@ def main() -> None:
         col1, col2, col3 = st.columns([1.1, 1.1, 0.9])
 
         with col1:
-            credito = st.number_input("Credito a contratar", min_value=0.0, value=100000.0, step=1000.0)
-            lance_proprio = st.number_input("Lance recurso proprio", min_value=0.0, value=25000.0, step=500.0)
-            lance_embutido_pct = st.slider("Lance embutido", min_value=0, max_value=25, value=25, step=1) / 100
+            credito = campo_monetario("Credito a contratar", "credito_input", 100000.0)
+            lance_proprio = campo_monetario("Lance recurso proprio", "lance_proprio_input", 25000.0)
+            lance_embutido_pct = st.slider(
+                "Lance embutido",
+                min_value=0,
+                max_value=25,
+                value=25,
+                step=1,
+                format="%d%%",
+            ) / 100
 
         with col2:
             prazo = st.selectbox("Prazo", PRAZOS, index=4)
@@ -217,9 +281,9 @@ def main() -> None:
             mes_contemplacao = st.number_input("Simular contemplacao a partir do mes", min_value=1, max_value=120, value=1, step=1)
 
         with col3:
-            taxa_admin_pct = st.number_input("Taxa administrativa", min_value=0.0, value=20.0, step=0.5) / 100
-            fundo_reserva_pct = st.number_input("Fundo reserva", min_value=0.0, value=3.0, step=0.1) / 100
-            seguro_pct = st.number_input("Seguro vida ao mes", min_value=0.0, value=0.075, step=0.005, format="%.3f") / 100
+            taxa_admin_pct = campo_percentual("Taxa administrativa", "taxa_admin_input", 20.0)
+            fundo_reserva_pct = campo_percentual("Fundo reserva", "fundo_reserva_input", 3.0)
+            seguro_pct = campo_percentual("Seguro vida ao mes", "seguro_input", 0.075, casas_decimais=3)
 
     resultado = calcular_simulacao(
         credito=credito,
