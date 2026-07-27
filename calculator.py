@@ -118,29 +118,32 @@ def gerar_tabela_contemplacao(resultado: ResultadoSimulacao) -> list[dict[str, D
         )
 
         if saldo == 0:
+            parcelas_restantes_apos_lance = Decimal("0")
             parcelas_abatidas: Decimal | str = (
                 Decimal(resultado.prazo - mes)
                 if resultado.uso_lance == "ABATER QUANTIDADE DE PARCELAS"
-                else "-"
+                else Decimal(resultado.prazo - mes)
             )
-            novo_prazo = mes
+            mes_previsto_quitacao = mes
             nova_parcela: Decimal | str = "QUITADO"
         elif resultado.uso_lance == "ABATER QUANTIDADE DE PARCELAS":
-            prazo_restante_apos_lance = Decimal(round_half_up(saldo / resultado.parcela_normal))
-            parcelas_abatidas = Decimal(resultado.prazo - mes) - prazo_restante_apos_lance
-            novo_prazo = mes + int(prazo_restante_apos_lance)
+            parcelas_restantes_apos_lance = Decimal(round_half_up(saldo / resultado.parcela_normal))
+            parcelas_abatidas = Decimal(resultado.prazo - mes) - parcelas_restantes_apos_lance
+            mes_previsto_quitacao = mes + int(parcelas_restantes_apos_lance)
             nova_parcela = resultado.parcela_normal
         else:
+            parcelas_restantes_apos_lance = Decimal(resultado.prazo - mes)
             parcelas_abatidas = "-"
-            novo_prazo = resultado.prazo
+            mes_previsto_quitacao = resultado.prazo
             parcelas_restantes = max(1, resultado.prazo - mes)
             nova_parcela = saldo / Decimal(parcelas_restantes)
 
         linhas.append(
             {
                 "Mes de contemplacao": mes,
+                "Parcelas restantes apos lance": parcelas_restantes_apos_lance,
                 "Parcelas abatidas": parcelas_abatidas,
-                "Novo prazo": novo_prazo,
+                "Mes previsto de quitacao": mes_previsto_quitacao,
                 "Nova parcela": nova_parcela,
                 "Saldo apos lance": saldo,
             }
