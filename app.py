@@ -19,6 +19,7 @@ LANCE_FIXO_PERCENTUAIS = {
     "Lance fixo (50%)": 50.0,
 }
 LIMITE_LANCE_EMBUTIDO_PERCENTUAL = 25.0
+COR_MARCA = "#3B369E"
 
 
 st.set_page_config(
@@ -286,9 +287,9 @@ def aplicar_estilo() -> None:
                 --text: #1f2937;
                 --muted: #6b7280;
                 --line: #d9dee7;
-                --brand: #334155;
-                --gold: #b08a3c;
-                --green: #0f766e;
+                --brand: #3B369E;
+                --gold: #3B369E;
+                --green: #3B369E;
             }
 
             .stApp {
@@ -368,9 +369,9 @@ def aplicar_estilo() -> None:
             }
 
             .tag {
-                border: 1px solid #c8b37a;
-                background: #fff8e6;
-                color: #7a5b16;
+                border: 1px solid #cbc9f0;
+                background: #f0efff;
+                color: var(--brand);
                 padding: 8px 12px;
                 border-radius: 8px;
                 font-weight: 700;
@@ -432,8 +433,8 @@ def aplicar_estilo() -> None:
 
             .stButton > button {
                 border-radius: 8px;
-                border: 1px solid #9a7a33;
-                background: #b08a3c;
+                border: 1px solid var(--brand);
+                background: var(--brand);
                 color: white;
                 font-weight: 800;
             }
@@ -564,8 +565,8 @@ def renderizar_resumo_copiavel(texto: str) -> None:
             }}
 
             button {{
-                background: #334155;
-                border: 1px solid #334155;
+                background: {COR_MARCA};
+                border: 1px solid {COR_MARCA};
                 border-radius: 8px;
                 color: #ffffff;
                 cursor: pointer;
@@ -575,7 +576,7 @@ def renderizar_resumo_copiavel(texto: str) -> None:
             }}
 
             span {{
-                color: #0f766e;
+                color: {COR_MARCA};
                 font-size: 12px;
                 font-weight: 700;
             }}
@@ -615,6 +616,83 @@ def renderizar_resumo_copiavel(texto: str) -> None:
         </script>
         """,
         height=382,
+    )
+
+
+def renderizar_tabela_cenario(df: pd.DataFrame) -> None:
+    tabela_html = df.to_html(index=False, escape=False, classes="scenario-table")
+
+    st.markdown(
+        f"""
+        <style>
+            .scenario-table-wrap {{
+                border: 1px solid #d9dee7;
+                border-radius: 8px;
+                box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+                margin-top: 10px;
+                overflow-x: auto;
+                overflow-y: hidden;
+            }}
+
+            .scenario-table {{
+                background: #ffffff;
+                border-collapse: collapse;
+                margin: 0;
+                min-width: 900px;
+                width: 100%;
+            }}
+
+            .scenario-table thead th {{
+                background: {COR_MARCA};
+                border-right: 1px solid rgba(255, 255, 255, 0.22);
+                color: #ffffff;
+                font-size: 0.82rem;
+                font-weight: 800;
+                padding: 12px 10px;
+                text-align: center;
+                vertical-align: middle;
+                white-space: nowrap;
+            }}
+
+            .scenario-table thead th:last-child {{
+                border-right: 0;
+            }}
+
+            .scenario-table tbody td {{
+                border-bottom: 1px solid #e6e8ef;
+                border-right: 1px solid #edf0f5;
+                color: #1f2937;
+                font-size: 0.86rem;
+                padding: 11px 10px;
+                text-align: center;
+                vertical-align: middle;
+                white-space: nowrap;
+            }}
+
+            .scenario-table tbody td:last-child {{
+                border-right: 0;
+            }}
+
+            .scenario-table tbody tr:nth-child(even) td {{
+                background: #f4f4ff;
+            }}
+
+            .scenario-table tbody tr:hover td {{
+                background: #ecebff;
+            }}
+
+            .scenario-table tbody tr:last-child td {{
+                border-bottom: 0;
+            }}
+
+            .scenario-table tbody td:first-child {{
+                color: {COR_MARCA};
+                font-weight: 800;
+            }}
+        </style>
+        <div class="scenario-table-wrap">{tabela_html}</div>
+        """,
+        unsafe_allow_html=True,
     )
 
 
@@ -731,12 +809,30 @@ def main() -> None:
             "faltam 33 parcelas apos o lance."
         )
         df = pd.DataFrame(tabela)
+        df["Assembleia"] = df["Mes de contemplacao"].apply(lambda mes: f"{inteiro(mes)}\u00aa Assembleia")
+        df = df[
+            [
+                "Assembleia",
+                "Parcelas restantes apos lance",
+                "Parcelas abatidas",
+                "Mes previsto de quitacao",
+                "Nova parcela",
+                "Saldo apos lance",
+            ]
+        ].copy()
         df["Parcelas restantes apos lance"] = df["Parcelas restantes apos lance"].apply(inteiro)
         df["Parcelas abatidas"] = df["Parcelas abatidas"].apply(inteiro)
-        df["Mes previsto de quitacao"] = df["Mes previsto de quitacao"].apply(inteiro)
+        df["Mes previsto de quitacao"] = df["Mes previsto de quitacao"].apply(lambda mes: f"{inteiro(mes)}\u00aa Assembleia")
         df["Nova parcela"] = df["Nova parcela"].apply(moeda)
         df["Saldo apos lance"] = df["Saldo apos lance"].apply(moeda)
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        df = df.rename(
+            columns={
+                "Parcelas restantes apos lance": "Parcelas restantes apos lance",
+                "Mes previsto de quitacao": "Mes previsto de quitacao",
+                "Saldo apos lance": "Saldo apos lance",
+            }
+        )
+        renderizar_tabela_cenario(df)
 
         csv = df.to_csv(index=False, sep=";").encode("utf-8-sig")
         st.download_button(
