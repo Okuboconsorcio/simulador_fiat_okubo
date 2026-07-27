@@ -5,6 +5,7 @@ import json
 import re
 from datetime import date, timedelta
 from decimal import Decimal
+from textwrap import dedent
 
 import pandas as pd
 import streamlit as st
@@ -621,8 +622,7 @@ def renderizar_resumo_copiavel(texto: str) -> None:
 
 def renderizar_tabela_cenario(df: pd.DataFrame) -> None:
     tabela_html = df.to_html(index=False, escape=False, classes="scenario-table")
-
-    st.markdown(
+    css = dedent(
         f"""
         <style>
             .scenario-table-wrap {{
@@ -690,8 +690,12 @@ def renderizar_tabela_cenario(df: pd.DataFrame) -> None:
                 font-weight: 800;
             }}
         </style>
-        <div class="scenario-table-wrap">{tabela_html}</div>
-        """,
+        """
+    ).strip()
+
+    st.markdown(css, unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="scenario-table-wrap">{tabela_html}</div>',
         unsafe_allow_html=True,
     )
 
