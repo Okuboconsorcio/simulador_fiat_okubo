@@ -122,7 +122,9 @@ def aplicar_estilo() -> None:
             .block-container {
                 padding-top: 2.2rem;
                 padding-bottom: 2rem;
-                max-width: 1180px;
+                padding-left: 2rem;
+                padding-right: 2rem;
+                max-width: 1480px;
             }
 
             .topbar {
@@ -173,6 +175,7 @@ def aplicar_estilo() -> None:
                 border-radius: 8px;
                 padding: 16px 16px 14px;
                 box-shadow: 0 6px 16px rgba(15, 23, 42, 0.05);
+                min-height: 112px;
             }
 
             div[data-testid="stMetricLabel"] p {
@@ -183,6 +186,13 @@ def aplicar_estilo() -> None:
             div[data-testid="stMetricValue"] {
                 color: var(--text);
                 font-weight: 800;
+                line-height: 1.15;
+                white-space: normal;
+                overflow-wrap: anywhere;
+            }
+
+            div[data-testid="stMetricValue"] > div {
+                font-size: clamp(1.35rem, 1.75vw, 2rem);
             }
 
             .result-box {
@@ -218,6 +228,18 @@ def aplicar_estilo() -> None:
                 background: var(--brand);
                 color: white;
                 font-weight: 800;
+            }
+
+            @media (max-width: 900px) {
+                .block-container {
+                    padding-left: 1rem;
+                    padding-right: 1rem;
+                }
+
+                .topbar {
+                    align-items: flex-start;
+                    flex-direction: column;
+                }
             }
         </style>
         """,
