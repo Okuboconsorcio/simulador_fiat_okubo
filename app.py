@@ -513,7 +513,7 @@ def montar_resumo(resultado, dados_proposta: dict[str, object], tipo_lance: str)
             f"Prazo: {resultado.prazo} meses",
             f"Plano: {resultado.plano}",
             f"Tipo de Lance: {tipo_lance}",
-            f"Lance próprio: {moeda(resultado.lance_proprio)}",
+            f"Lance recurso próprio: {moeda(resultado.lance_proprio)}",
             f"Lance embutido: {moeda(resultado.lance_embutido)} ({percentual(resultado.lance_embutido_percentual)})",
             f"Lance total: {moeda(resultado.lance_total)} ({percentual(resultado.lance_total_percentual)})",
             f"Crédito líquido: {moeda(resultado.credito_liquido)}",
