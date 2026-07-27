@@ -162,7 +162,7 @@ def renderizar_formulario_proposta() -> dict[str, object]:
 
     col10, col11, col12 = st.columns(3)
     with col10:
-        carro_referencia = st.text_input("Carro referencia")
+        carro_referencia = st.text_input("Carro referência")
     with col11:
         ano = st.text_input("Ano")
     with col12:
@@ -247,7 +247,7 @@ def renderizar_controles_lance(credito: float, tipo_lance: str) -> tuple[float, 
     col1, col2 = st.columns(2)
     with col1:
         lance_proprio_texto = st.text_input(
-            "Lance recurso proprio",
+            "Lance recurso próprio",
             key="lance_proprio_input",
             on_change=normalizar_lance_proprio,
             args=("lance_proprio_input",),
@@ -478,9 +478,9 @@ def renderizar_logos() -> None:
     st.markdown(
         f"""
         <div class="logo-strip">
-            <div class="logo-card"><img src="{fiat}" alt="FIAT Consorcio"></div>
+            <div class="logo-card"><img src="{fiat}" alt="FIAT Consórcio"></div>
             <div class="logo-card"><img src="{stellantis}" alt="Stellantis"></div>
-            <div class="logo-card logo-dark"><img src="{mgcon}" alt="MGCON Consorcios"></div>
+            <div class="logo-card logo-dark"><img src="{mgcon}" alt="MGCON Consórcios"></div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -490,7 +490,7 @@ def renderizar_logos() -> None:
 def montar_resumo(resultado, dados_proposta: dict[str, object], tipo_lance: str) -> str:
     return "\n".join(
         [
-            "Simulacao de plano Fiat",
+            "Simulação de plano Fiat",
             "",
             "Dados pessoais",
             "",
@@ -503,21 +503,21 @@ def montar_resumo(resultado, dados_proposta: dict[str, object], tipo_lance: str)
             f"Data de Nascimento: {formatar_data_resumo(dados_proposta.get('data_nascimento'))}",
             f"Estado: {dados_proposta.get('estado') or ''}",
             f"Cidade: {dados_proposta.get('cidade') or ''}",
-            f"Carro referencia: {dados_proposta.get('carro_referencia') or ''}",
+            f"Carro referência: {dados_proposta.get('carro_referencia') or ''}",
             f"Ano: {dados_proposta.get('ano') or ''}",
             f"Modelo: {dados_proposta.get('modelo') or ''}",
             "",
-            "Informacoes do plano",
+            "Informações do plano",
             "",
-            f"Credito contratado: {moeda(resultado.credito)}",
+            f"Crédito contratado: {moeda(resultado.credito)}",
             f"Prazo: {resultado.prazo} meses",
             f"Plano: {resultado.plano}",
             f"Tipo de Lance: {tipo_lance}",
-            f"Lance proprio: {moeda(resultado.lance_proprio)}",
+            f"Lance próprio: {moeda(resultado.lance_proprio)}",
             f"Lance embutido: {moeda(resultado.lance_embutido)} ({percentual(resultado.lance_embutido_percentual)})",
             f"Lance total: {moeda(resultado.lance_total)} ({percentual(resultado.lance_total_percentual)})",
-            f"Credito liquido: {moeda(resultado.credito_liquido)}",
-            f"Parcela ate contemplacao: {moeda(resultado.parcela_ate_contemplacao)}",
+            f"Crédito líquido: {moeda(resultado.credito_liquido)}",
+            f"Parcela até contemplação: {moeda(resultado.parcela_ate_contemplacao)}",
             f"Total do plano com seguro: {moeda(resultado.total_plano_com_seguro)}",
             f"Taxa administrativa: {percentual(resultado.taxa_admin_percentual)}",
         ]
@@ -709,7 +709,7 @@ def main() -> None:
         <div class="topbar">
             <div>
                 <h1 class="brand-title">Simulador Fiat Okubo</h1>
-                <div class="brand-subtitle">Calcule credito, lance, parcelas e cenarios de contemplacao em tempo real.</div>
+                <div class="brand-subtitle">Calcule crédito, lance, parcelas e cenários de contemplação em tempo real.</div>
             </div>
             <div class="tag">Uso consultivo</div>
         </div>
@@ -720,11 +720,11 @@ def main() -> None:
     dados_proposta = renderizar_formulario_proposta()
 
     with st.container():
-        st.markdown('<div class="section-title">Dados da simulacao</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">Dados da simulação</div>', unsafe_allow_html=True)
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            credito = campo_monetario("Credito a contratar", "credito_input", 100000.0)
+            credito = campo_monetario("Crédito a contratar", "credito_input", 100000.0)
 
         with col2:
             prazo = st.selectbox("Prazo", PRAZOS, index=4)
@@ -738,7 +738,7 @@ def main() -> None:
         with fundo_col:
             fundo_reserva_pct = campo_percentual("Fundo reserva", "fundo_reserva_input", 3.0)
         with seguro_col:
-            seguro_pct = campo_percentual("Seguro vida ao mes", "seguro_input", 0.075, casas_decimais=3)
+            seguro_pct = campo_percentual("Seguro vida ao mês", "seguro_input", 0.075, casas_decimais=3)
 
         tipo_lance = st.radio(
             "Tipo de lance ofertado",
@@ -755,7 +755,7 @@ def main() -> None:
             uso_lance = st.selectbox("Uso do lance", USOS_LANCE, index=0)
         with col5:
             mes_contemplacao = st.number_input(
-                "Simular contemplacao a partir do mes",
+                "Simular contemplação a partir do mês",
                 min_value=1,
                 max_value=120,
                 value=1,
@@ -777,9 +777,9 @@ def main() -> None:
 
     st.markdown('<div class="section-title">Resultado</div>', unsafe_allow_html=True)
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Parcela ate contemplacao", moeda(resultado.parcela_ate_contemplacao))
+    k1.metric("Parcela até contemplação", moeda(resultado.parcela_ate_contemplacao))
     k2.metric("Lance total", moeda(resultado.lance_total), percentual(resultado.lance_total_percentual))
-    k3.metric("Credito liquido", moeda(resultado.credito_liquido))
+    k3.metric("Crédito líquido", moeda(resultado.credito_liquido))
     k4.metric("Total com seguro", moeda(resultado.total_plano_com_seguro))
 
     r1, r2 = st.columns([1.1, 0.9])
@@ -788,7 +788,7 @@ def main() -> None:
             f"""
             <div class="result-box">
                 <strong>Resumo do plano</strong><br><br>
-                Cr&eacute;dito total: <strong>{moeda(resultado.credito)}</strong><br>
+                Crédito total: <strong>{moeda(resultado.credito)}</strong><br>
                 Prazo: <strong>{resultado.prazo} meses</strong><br>
                 Lance total: <strong>{moeda(resultado.lance_total)} ({percentual(resultado.lance_total_percentual)})</strong><br>
                 Seguro mensal: <strong>{moeda(resultado.seguro_mensal)}</strong><br>
@@ -805,14 +805,14 @@ def main() -> None:
         resumo = montar_resumo(resultado, dados_proposta, tipo_lance)
         renderizar_resumo_copiavel(resumo)
 
-    st.markdown('<div class="section-title">Cenario de contemplacao</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Cenário de contemplação</div>', unsafe_allow_html=True)
     tabela = gerar_tabela_contemplacao(resultado)
 
     if tabela:
         st.caption(
-            "A coluna de quitacao e contada desde o inicio do plano. "
-            "Exemplo: se contemplar no mes 20 e aparecer quitacao no mes 53, "
-            "faltam 33 parcelas apos o lance."
+            "A coluna de quitação é contada desde o início do plano. "
+            "Exemplo: se contemplar no mês 20 e aparecer quitação no mês 53, "
+            "faltam 33 parcelas após o lance."
         )
         df = pd.DataFrame(tabela)
         df["Assembleia"] = df["Mes de contemplacao"].apply(lambda mes: f"{inteiro(mes)}\u00aa Assembleia")
@@ -833,25 +833,25 @@ def main() -> None:
         df["Saldo apos lance"] = df["Saldo apos lance"].apply(moeda)
         df = df.rename(
             columns={
-                "Parcelas restantes apos lance": "Parcelas restantes apos lance",
-                "Mes previsto de quitacao": "Mes previsto de quitacao",
-                "Saldo apos lance": "Saldo apos lance",
+                "Parcelas restantes apos lance": "Parcelas restantes após lance",
+                "Mes previsto de quitacao": "Mês previsto de quitação",
+                "Saldo apos lance": "Saldo após lance",
             }
         )
         renderizar_tabela_cenario(df)
 
         csv = df.to_csv(index=False, sep=";").encode("utf-8-sig")
         st.download_button(
-            "Baixar simulacao em CSV",
+            "Baixar simulação em CSV",
             data=csv,
             file_name="simulacao_fiat_okubo.csv",
             mime="text/csv",
         )
     else:
-        st.info("Para simular a contemplacao, escolha um mes menor que o prazo total.")
+        st.info("Para simular a contemplação, escolha um mês menor que o prazo total.")
 
     st.caption(
-        "Simulador consultivo. Os valores podem variar conforme regra comercial, administradora, assembleia, credito e vigencia do plano."
+        "Simulador consultivo. Os valores podem variar conforme regra comercial, administradora, assembleia, crédito e vigência do plano."
     )
 
 
