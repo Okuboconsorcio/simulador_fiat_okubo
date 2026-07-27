@@ -788,11 +788,13 @@ def main() -> None:
             f"""
             <div class="result-box">
                 <strong>Resumo do plano</strong><br><br>
-                Lance embutido: <strong>{moeda(resultado.lance_embutido)}</strong><br>
+                Cr&eacute;dito total: <strong>{moeda(resultado.credito)}</strong><br>
+                Prazo: <strong>{resultado.prazo} meses</strong><br>
+                Lance total: <strong>{moeda(resultado.lance_total)} ({percentual(resultado.lance_total_percentual)})</strong><br>
                 Seguro mensal: <strong>{moeda(resultado.seguro_mensal)}</strong><br>
                 Parcela normal com seguro: <strong>{moeda(resultado.parcela_normal)}</strong><br>
                 Parcela Mais por Menos com seguro: <strong>{moeda(resultado.parcela_mais_por_menos)}</strong><br>
-                Total do plano sem seguro: <strong>{moeda(resultado.total_plano_sem_seguro)}</strong>
+                Total do plano com Seguro: <strong>{moeda(resultado.total_plano_com_seguro)}</strong>
             </div>
             """,
             unsafe_allow_html=True,
