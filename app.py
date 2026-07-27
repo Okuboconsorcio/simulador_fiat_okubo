@@ -13,6 +13,7 @@ import streamlit.components.v1 as components
 
 from calculator import PLANOS, PRAZOS, USOS_LANCE, calcular_simulacao, gerar_tabela_contemplacao
 from logos import LOGOS
+from pdf_generator import gerar_pdf_simulacao, nome_arquivo_pdf
 
 TIPOS_LANCE = ("Sem lance", "Lance livre", "Lance fixo (25%)", "Lance fixo (50%)")
 LANCE_FIXO_PERCENTUAIS = {
@@ -841,12 +842,22 @@ def main() -> None:
         renderizar_tabela_cenario(df)
 
         csv = df.to_csv(index=False, sep=";").encode("utf-8-sig")
-        st.download_button(
-            "Baixar simulação em CSV",
-            data=csv,
-            file_name="simulacao_fiat_okubo.csv",
-            mime="text/csv",
-        )
+        pdf = gerar_pdf_simulacao(dados_proposta, resultado, tipo_lance, df)
+        col_csv, col_pdf = st.columns(2)
+        with col_csv:
+            st.download_button(
+                "Baixar simulação em CSV",
+                data=csv,
+                file_name="simulacao_fiat_okubo.csv",
+                mime="text/csv",
+            )
+        with col_pdf:
+            st.download_button(
+                "Baixar simulação em PDF",
+                data=pdf,
+                file_name=nome_arquivo_pdf(dados_proposta),
+                mime="application/pdf",
+            )
     else:
         st.info("Para simular a contemplação, escolha um mês menor que o prazo total.")
 
