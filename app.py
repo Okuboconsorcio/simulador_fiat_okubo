@@ -4,24 +4,30 @@ import html
 import json
 import re
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from textwrap import dedent
 
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
-from calculator import PLANOS, PRAZOS, USOS_LANCE, calcular_simulacao, gerar_tabela_contemplacao
+from calculator import MODO_DILUIDO_RATEADO, PLANOS, PRAZOS, USOS_LANCE, calcular_simulacao, gerar_tabela_contemplacao
 from logos import LOGOS
 from pdf_generator import gerar_pdf_simulacao, nome_arquivo_pdf
 
 TIPOS_LANCE = ("Sem lance", "Lance livre", "Lance fixo (25%)", "Lance fixo (50%)")
 LANCE_FIXO_PERCENTUAIS = {
-    "Lance fixo (25%)": 25.0,
-    "Lance fixo (50%)": 50.0,
+    "Lance fixo (25%)": Decimal("25.0"),
+    "Lance fixo (50%)": Decimal("50.0"),
 }
-LIMITE_LANCE_EMBUTIDO_PERCENTUAL = 25.0
+LIMITE_LANCE_EMBUTIDO_PERCENTUAL = Decimal("25.0")
 COR_MARCA = "#3B369E"
+USOS_LANCE_ROTULOS = {
+    "REDUZIR_PARCELA": "Reduzir parcela",
+    "REDUZIR_PRAZO": "Reduzir prazo",
+    "DILUIDO_RATEADO": "Diluído/rateado",
+}
+USOS_LANCE_POR_ROTULO = {rotulo: uso for uso, rotulo in USOS_LANCE_ROTULOS.items()}
 
 
 st.set_page_config(
@@ -39,17 +45,21 @@ def moeda(valor: Decimal | float | int | str) -> str:
     if isinstance(valor, str):
         return valor
 
-    numero = float(valor)
-    texto = f"R$ {numero:,.2f}"
-    return texto.replace(",", "X").replace(".", ",").replace("X", ".")
+    numero = Decimal(str(valor or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    sinal = "-" if numero < 0 else ""
+    inteiro_txt, decimal_txt = f"{abs(numero):.2f}".split(".")
+    inteiro_br = f"{int(inteiro_txt):,}".replace(",", ".")
+    return f"{sinal}R$ {inteiro_br},{decimal_txt}"
 
 
 def percentual(valor: Decimal | float | int) -> str:
-    return f"{float(valor) * 100:.2f}%".replace(".", ",")
+    numero = (Decimal(str(valor or 0)) * Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return f"{numero:.2f}%".replace(".", ",")
 
 
 def formatar_percentual_input(valor: Decimal | float | int, casas_decimais: int = 2) -> str:
-    texto = f"{float(valor):,.{casas_decimais}f}%"
+    numero = Decimal(str(valor or 0)).quantize(Decimal(f"1e-{casas_decimais}"), rounding=ROUND_HALF_UP)
+    texto = f"{numero:,.{casas_decimais}f}%"
     return texto.replace(",", "X").replace(".", ",").replace("X", ".")
 
 
@@ -59,11 +69,11 @@ def inteiro(valor: Decimal | float | int | str) -> str:
     return f"{int(valor):,}".replace(",", ".")
 
 
-def parse_numero_brasileiro(texto: str) -> float:
+def parse_numero_brasileiro(texto: str) -> Decimal:
     valor = re.sub(r"[^0-9,.-]", "", str(texto or "").strip())
 
     if not valor:
-        return 0.0
+        return Decimal("0")
 
     if "," in valor:
         valor = valor.replace(".", "").replace(",", ".")
@@ -73,9 +83,9 @@ def parse_numero_brasileiro(texto: str) -> float:
             valor = "".join(partes)
 
     try:
-        return max(0.0, float(valor))
-    except ValueError:
-        return 0.0
+        return max(Decimal("0"), Decimal(valor))
+    except (InvalidOperation, ValueError):
+        return Decimal("0")
 
 
 def normalizar_campo_moeda(chave: str) -> None:
@@ -102,7 +112,7 @@ def normalizar_campo_percentual(chave: str, casas_decimais: int = 2) -> None:
     )
 
 
-def campo_monetario(rotulo: str, chave: str, valor_inicial: float) -> float:
+def campo_monetario(rotulo: str, chave: str, valor_inicial: Decimal | float | int) -> Decimal:
     if chave not in st.session_state:
         st.session_state[chave] = moeda(valor_inicial)
 
@@ -110,7 +120,7 @@ def campo_monetario(rotulo: str, chave: str, valor_inicial: float) -> float:
     return parse_numero_brasileiro(texto)
 
 
-def campo_percentual(rotulo: str, chave: str, valor_inicial: float, casas_decimais: int = 2) -> float:
+def campo_percentual(rotulo: str, chave: str, valor_inicial: Decimal | float | int, casas_decimais: int = 2) -> Decimal:
     if chave not in st.session_state:
         st.session_state[chave] = formatar_percentual_input(valor_inicial, casas_decimais)
 
@@ -120,7 +130,7 @@ def campo_percentual(rotulo: str, chave: str, valor_inicial: float, casas_decima
         on_change=normalizar_campo_percentual,
         args=(chave, casas_decimais),
     )
-    return parse_numero_brasileiro(texto) / 100
+    return parse_numero_brasileiro(texto) / Decimal("100")
 
 
 def formatar_data_resumo(valor: object) -> str:
@@ -185,9 +195,9 @@ def renderizar_formulario_proposta() -> dict[str, object]:
     }
 
 
-def sincronizar_lance_por_tipo(tipo_lance: str, credito: float) -> None:
+def sincronizar_lance_por_tipo(tipo_lance: str, credito: Decimal) -> None:
     if "lance_proprio_input" not in st.session_state:
-        st.session_state["lance_proprio_input"] = moeda(25000.0)
+        st.session_state["lance_proprio_input"] = moeda(Decimal("25000.00"))
     if "lance_embutido_slider" not in st.session_state:
         st.session_state["lance_embutido_slider"] = 25.0
 
@@ -201,8 +211,10 @@ def sincronizar_lance_por_tipo(tipo_lance: str, credito: float) -> None:
         elif tipo_lance in LANCE_FIXO_PERCENTUAIS:
             limite_total = LANCE_FIXO_PERCENTUAIS[tipo_lance]
             embutido_padrao = min(LIMITE_LANCE_EMBUTIDO_PERCENTUAL, limite_total)
-            st.session_state["lance_embutido_slider"] = embutido_padrao
-            st.session_state["lance_proprio_input"] = moeda(max(0, credito * ((limite_total - embutido_padrao) / 100)))
+            st.session_state["lance_embutido_slider"] = float(embutido_padrao)
+            st.session_state["lance_proprio_input"] = moeda(
+                max(Decimal("0"), credito * ((limite_total - embutido_padrao) / Decimal("100")))
+            )
 
     if tipo_lance == "Sem lance":
         st.session_state["lance_proprio_input"] = moeda(0)
@@ -210,34 +222,37 @@ def sincronizar_lance_por_tipo(tipo_lance: str, credito: float) -> None:
         return
 
     if tipo_lance not in LANCE_FIXO_PERCENTUAIS:
-        st.session_state["lance_embutido_slider"] = min(
-            max(float(st.session_state.get("lance_embutido_slider", 0.0)), 0.0),
-            LIMITE_LANCE_EMBUTIDO_PERCENTUAL,
+        lance_atual = Decimal(str(st.session_state.get("lance_embutido_slider", 0.0)))
+        st.session_state["lance_embutido_slider"] = float(
+            min(max(lance_atual, Decimal("0")), LIMITE_LANCE_EMBUTIDO_PERCENTUAL)
         )
         return
 
     limite_total = LANCE_FIXO_PERCENTUAIS[tipo_lance]
-    total_lance = credito * (limite_total / 100)
+    total_lance = credito * (limite_total / Decimal("100"))
     embutido_maximo = min(LIMITE_LANCE_EMBUTIDO_PERCENTUAL, limite_total)
-    proprio_minimo = max(0.0, total_lance - (credito * (embutido_maximo / 100)))
+    proprio_minimo = max(Decimal("0"), total_lance - (credito * (embutido_maximo / Decimal("100"))))
     ultimo = st.session_state.get("ultimo_lance_alterado", "embutido")
 
     if ultimo == "proprio":
         lance_proprio = parse_numero_brasileiro(st.session_state.get("lance_proprio_input", ""))
         lance_proprio = min(max(lance_proprio, proprio_minimo), total_lance)
-        lance_embutido_pct = ((total_lance - lance_proprio) / credito * 100) if credito else 0.0
+        lance_embutido_pct = ((total_lance - lance_proprio) / credito * Decimal("100")) if credito else Decimal("0")
     else:
+        lance_atual = Decimal(str(st.session_state.get("lance_embutido_slider", float(embutido_maximo))))
         lance_embutido_pct = min(
-            max(float(st.session_state.get("lance_embutido_slider", embutido_maximo)), 0.0),
+            max(lance_atual, Decimal("0")),
             embutido_maximo,
         )
-        lance_proprio = max(0.0, total_lance - (credito * (lance_embutido_pct / 100)))
+        lance_proprio = max(Decimal("0"), total_lance - (credito * (lance_embutido_pct / Decimal("100"))))
 
-    st.session_state["lance_embutido_slider"] = round(lance_embutido_pct, 1)
+    st.session_state["lance_embutido_slider"] = float(
+        lance_embutido_pct.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+    )
     st.session_state["lance_proprio_input"] = moeda(lance_proprio)
 
 
-def renderizar_controles_lance(credito: float, tipo_lance: str) -> tuple[float, float]:
+def renderizar_controles_lance(credito: Decimal, tipo_lance: str) -> tuple[Decimal, Decimal]:
     sincronizar_lance_por_tipo(tipo_lance, credito)
 
     slider_maximo = LIMITE_LANCE_EMBUTIDO_PERCENTUAL
@@ -267,16 +282,19 @@ def renderizar_controles_lance(credito: float, tipo_lance: str) -> tuple[float, 
         )
 
     if desabilitado:
-        return 0.0, 0.0
+        return Decimal("0"), Decimal("0")
 
     if tipo_lance in LANCE_FIXO_PERCENTUAIS and st.session_state.get("ultimo_lance_alterado") == "proprio":
-        limite_total = LANCE_FIXO_PERCENTUAIS[tipo_lance] / 100
+        limite_total = LANCE_FIXO_PERCENTUAIS[tipo_lance] / Decimal("100")
         total_lance = credito * limite_total
         lance_proprio = parse_numero_brasileiro(lance_proprio_texto)
-        lance_embutido_percentual = ((total_lance - lance_proprio) / credito * 100) if credito else 0.0
-        lance_embutido_percentual = max(0.0, min(lance_embutido_percentual, slider_maximo))
+        lance_embutido_percentual = ((total_lance - lance_proprio) / credito * Decimal("100")) if credito else Decimal("0")
+        lance_embutido_percentual = max(Decimal("0"), min(lance_embutido_percentual, slider_maximo))
 
-    return parse_numero_brasileiro(st.session_state.get("lance_proprio_input", "")), lance_embutido_percentual / 100
+    return (
+        parse_numero_brasileiro(st.session_state.get("lance_proprio_input", "")),
+        Decimal(str(lance_embutido_percentual)) / Decimal("100"),
+    )
 
 
 def aplicar_estilo() -> None:
@@ -488,7 +506,7 @@ def renderizar_logos() -> None:
     )
 
 
-def montar_resumo(resultado, dados_proposta: dict[str, object], tipo_lance: str) -> str:
+def montar_resumo(resultado, dados_proposta: dict[str, object], tipo_lance: str, uso_lance_rotulo: str) -> str:
     return "\n".join(
         [
             "Simulação de plano Fiat",
@@ -514,6 +532,7 @@ def montar_resumo(resultado, dados_proposta: dict[str, object], tipo_lance: str)
             f"Prazo: {resultado.prazo} meses",
             f"Plano: {resultado.plano}",
             f"Tipo de Lance: {tipo_lance}",
+            f"Uso do lance: {uso_lance_rotulo}",
             f"Lance recurso próprio: {moeda(resultado.lance_proprio)}",
             f"Lance embutido: {moeda(resultado.lance_embutido)} ({percentual(resultado.lance_embutido_percentual)})",
             f"Lance total: {moeda(resultado.lance_total)} ({percentual(resultado.lance_total_percentual)})",
@@ -753,7 +772,13 @@ def main() -> None:
 
         col4, col5 = st.columns([1.0, 1.0])
         with col4:
-            uso_lance = st.selectbox("Uso do lance", USOS_LANCE, index=0)
+            usos_rotulos = [USOS_LANCE_ROTULOS[uso] for uso in USOS_LANCE]
+            uso_lance_rotulo = st.selectbox(
+                "Uso do lance",
+                usos_rotulos,
+                index=USOS_LANCE.index(MODO_DILUIDO_RATEADO),
+            )
+            uso_lance = USOS_LANCE_POR_ROTULO[uso_lance_rotulo]
         with col5:
             mes_contemplacao = st.number_input(
                 "Simular contemplação a partir do mês",
@@ -761,6 +786,21 @@ def main() -> None:
                 max_value=120,
                 value=1,
                 step=1,
+            )
+
+        col6, col7 = st.columns([1.0, 1.0])
+        with col6:
+            percentual_pos_pct = campo_percentual(
+                "Percentual mensal pós-contemplação sem seguro",
+                "percentual_pos_contemplacao_input",
+                Decimal("1.1247"),
+                casas_decimais=4,
+            )
+        with col7:
+            outras_antecipacoes = campo_monetario(
+                "Outras antecipações",
+                "outras_antecipacoes_input",
+                Decimal("0.00"),
             )
 
     resultado = calcular_simulacao(
@@ -774,6 +814,8 @@ def main() -> None:
         plano=plano,
         uso_lance=uso_lance,
         mes_contemplacao=mes_contemplacao,
+        percentual_mensal_pos_contemplacao_sem_seguro=percentual_pos_pct,
+        outras_antecipacoes=outras_antecipacoes,
     )
 
     st.markdown('<div class="section-title">Resultado</div>', unsafe_allow_html=True)
@@ -803,7 +845,7 @@ def main() -> None:
 
     with r2:
         st.markdown("**Resumo para envio**")
-        resumo = montar_resumo(resultado, dados_proposta, tipo_lance)
+        resumo = montar_resumo(resultado, dados_proposta, tipo_lance, uso_lance_rotulo)
         renderizar_resumo_copiavel(resumo)
 
     st.markdown('<div class="section-title">Cenário de contemplação</div>', unsafe_allow_html=True)
@@ -842,7 +884,7 @@ def main() -> None:
         renderizar_tabela_cenario(df)
 
         csv = df.to_csv(index=False, sep=";").encode("utf-8-sig")
-        pdf = gerar_pdf_simulacao(dados_proposta, resultado, tipo_lance, df)
+        pdf = gerar_pdf_simulacao(dados_proposta, resultado, f"{tipo_lance} - {uso_lance_rotulo}", df)
         col_csv, col_pdf = st.columns(2)
         with col_csv:
             st.download_button(
