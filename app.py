@@ -639,18 +639,23 @@ def main() -> None:
 
     with st.container():
         st.markdown('<div class="section-title">Dados da simulacao</div>', unsafe_allow_html=True)
-        col1, col2, col3 = st.columns([1.1, 1.0, 0.9])
+        col1, col2, col3 = st.columns(3)
 
         with col1:
             credito = campo_monetario("Credito a contratar", "credito_input", 100000.0)
 
         with col2:
             prazo = st.selectbox("Prazo", PRAZOS, index=4)
-            plano = st.selectbox("Plano", PLANOS, index=1)
 
         with col3:
+            plano = st.selectbox("Plano", PLANOS, index=1)
+
+        taxa_col, fundo_col, seguro_col = st.columns(3)
+        with taxa_col:
             taxa_admin_pct = campo_percentual("Taxa administrativa", "taxa_admin_input", 20.0)
+        with fundo_col:
             fundo_reserva_pct = campo_percentual("Fundo reserva", "fundo_reserva_input", 3.0)
+        with seguro_col:
             seguro_pct = campo_percentual("Seguro vida ao mes", "seguro_input", 0.075, casas_decimais=3)
 
         tipo_lance = st.radio(
