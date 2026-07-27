@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from calculator import PLANOS, PRAZOS, USOS_LANCE, calcular_simulacao, gerar_tabela_contemplacao
+from logos import LOGOS
 
 
 st.set_page_config(
@@ -14,6 +15,10 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+
+
+def asset_data_uri(nome_arquivo: str) -> str:
+    return LOGOS[nome_arquivo]
 
 
 def moeda(valor: Decimal | float | int | str) -> str:
@@ -117,6 +122,37 @@ def aplicar_estilo() -> None:
 
             [data-testid="stSidebar"] {
                 display: none;
+            }
+
+            .logo-strip {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 18px;
+                margin: 10px 0 18px;
+            }
+
+            .logo-card {
+                align-items: center;
+                background: #ffffff;
+                border: 1px solid var(--line);
+                border-radius: 8px;
+                display: flex;
+                height: 108px;
+                justify-content: center;
+                overflow: hidden;
+                padding: 14px 18px;
+                box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
+            }
+
+            .logo-card img {
+                display: block;
+                max-height: 82px;
+                max-width: 100%;
+                object-fit: contain;
+            }
+
+            .logo-card.logo-dark {
+                background: #070707;
             }
 
             .block-container {
@@ -236,12 +272,34 @@ def aplicar_estilo() -> None:
                     padding-right: 1rem;
                 }
 
+                .logo-strip {
+                    grid-template-columns: 1fr;
+                    gap: 10px;
+                }
+
                 .topbar {
                     align-items: flex-start;
                     flex-direction: column;
                 }
             }
         </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def renderizar_logos() -> None:
+    fiat = asset_data_uri("fiat_logo.webp")
+    stellantis = asset_data_uri("stellantis_logo.webp")
+    mgcon = asset_data_uri("mgcon_logo.webp")
+
+    st.markdown(
+        f"""
+        <div class="logo-strip">
+            <div class="logo-card"><img src="{fiat}" alt="FIAT Consorcio"></div>
+            <div class="logo-card"><img src="{stellantis}" alt="Stellantis"></div>
+            <div class="logo-card logo-dark"><img src="{mgcon}" alt="MGCON Consorcios"></div>
+        </div>
         """,
         unsafe_allow_html=True,
     )
@@ -266,6 +324,7 @@ def montar_resumo(resultado) -> str:
 
 def main() -> None:
     aplicar_estilo()
+    renderizar_logos()
 
     st.markdown(
         """
