@@ -329,8 +329,15 @@ def main() -> None:
     tabela = gerar_tabela_contemplacao(resultado)
 
     if tabela:
+        st.caption(
+            "A coluna de quitacao e contada desde o inicio do plano. "
+            "Exemplo: se contemplar no mes 20 e aparecer quitacao no mes 53, "
+            "faltam 33 parcelas apos o lance."
+        )
         df = pd.DataFrame(tabela)
+        df["Parcelas restantes apos lance"] = df["Parcelas restantes apos lance"].apply(inteiro)
         df["Parcelas abatidas"] = df["Parcelas abatidas"].apply(inteiro)
+        df["Mes previsto de quitacao"] = df["Mes previsto de quitacao"].apply(inteiro)
         df["Nova parcela"] = df["Nova parcela"].apply(moeda)
         df["Saldo apos lance"] = df["Saldo apos lance"].apply(moeda)
         st.dataframe(df, use_container_width=True, hide_index=True)
