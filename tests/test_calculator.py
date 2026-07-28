@@ -9,6 +9,7 @@ from calculator import (
     SEGMENTO_AUTOMOVEL_MOTO_MOVEIS,
     TRATAMENTO_DEDUZIR_DO_CREDITO,
     TRATAMENTO_DIFERENCA_JA_ANTECIPADA,
+    TRATAMENTO_RENEGOCIAR_NO_SALDO,
     USOS_LANCE,
     calcular_simulacao,
     gerar_tabela_contemplacao,
@@ -45,11 +46,13 @@ class RegrasRegulamentoFiatEmbraconTest(unittest.TestCase):
         resultado = simulacao_base(uso_lance=MODO_REDUZIR_PRAZO)
         primeira_linha = gerar_tabela_contemplacao(resultado)[0]
 
-        self.assertEqual(resultado.parcela_ate_contemplacao_sem_seguro, Decimal("1349.64"))
-        self.assertEqual(primeira_linha["Nova parcela"], Decimal("1439.68"))
-        self.assertEqual(primeira_linha["Parcelas restantes apos lance"], Decimal("19"))
-        self.assertEqual(primeira_linha["Parcelas abatidas"], Decimal("59"))
-        self.assertEqual(primeira_linha["Mes previsto de quitacao"], 21)
+        self.assertEqual(resultado.parcela_normal_sem_seguro, Decimal("1845.00"))
+        self.assertEqual(resultado.parcela_mais_por_menos_sem_seguro, Decimal("1458.75"))
+        self.assertEqual(resultado.parcela_ate_contemplacao, Decimal("1548.79"))
+        self.assertEqual(primeira_linha["Nova parcela"], Decimal("1935.04"))
+        self.assertEqual(primeira_linha["Parcelas restantes apos lance"], Decimal("38"))
+        self.assertEqual(primeira_linha["Parcelas abatidas"], Decimal("40"))
+        self.assertEqual(primeira_linha["Mes previsto de quitacao"], 40)
 
     def test_reduzir_parcela_respeita_minimo_regulamentar_e_pode_encerrar_antes(self) -> None:
         resultado = simulacao_base(
@@ -59,9 +62,25 @@ class RegrasRegulamentoFiatEmbraconTest(unittest.TestCase):
         primeira_linha = gerar_tabela_contemplacao(resultado)[0]
 
         self.assertEqual(primeira_linha["Nova parcela"], Decimal("1290.04"))
-        self.assertEqual(primeira_linha["Parcelas restantes apos lance"], Decimal("22"))
-        self.assertEqual(primeira_linha["Parcelas abatidas"], Decimal("56"))
-        self.assertEqual(primeira_linha["Mes previsto de quitacao"], 24)
+        self.assertEqual(primeira_linha["Parcelas restantes apos lance"], Decimal("56"))
+        self.assertEqual(primeira_linha["Parcelas abatidas"], Decimal("22"))
+        self.assertEqual(primeira_linha["Mes previsto de quitacao"], 58)
+
+    def test_tabela_recalcula_saldo_para_cada_assembleia(self) -> None:
+        resultado = simulacao_base(uso_lance=MODO_REDUZIR_PRAZO)
+        linhas = gerar_tabela_contemplacao(resultado)
+
+        self.assertNotEqual(linhas[0]["Saldo apos lance"], linhas[10]["Saldo apos lance"])
+        self.assertNotEqual(linhas[0]["Parcelas restantes apos lance"], linhas[10]["Parcelas restantes apos lance"])
+
+    def test_renegociar_diferenca_mais_por_menos_nao_deduz_credito_liquido(self) -> None:
+        resultado = simulacao_base(
+            tratamento_diferenca_mais_por_menos=TRATAMENTO_RENEGOCIAR_NO_SALDO,
+        )
+
+        self.assertEqual(resultado.diferenca_adicionada_saldo, Decimal("30000.00"))
+        self.assertEqual(resultado.diferenca_deduzida_credito, Decimal("0"))
+        self.assertEqual(resultado.credito_liquido, Decimal("90000.00"))
 
     def test_lance_embutido_e_diferenca_do_mais_por_menos_sao_deducoes_separadas(self) -> None:
         resultado = simulacao_base(
