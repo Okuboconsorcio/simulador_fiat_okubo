@@ -3,55 +3,74 @@ from __future__ import annotations
 import unittest
 from decimal import Decimal
 
-from calculator import MODO_DILUIDO_RATEADO, calcular_diluido_rateado, calcular_simulacao, gerar_tabela_contemplacao
+from calculator import (
+    MODO_REDUZIR_PARCELA,
+    MODO_REDUZIR_PRAZO,
+    SEGMENTO_AUTOMOVEL_MOTO_MOVEIS,
+    TRATAMENTO_DEDUZIR_DO_CREDITO,
+    TRATAMENTO_DIFERENCA_JA_ANTECIPADA,
+    USOS_LANCE,
+    calcular_simulacao,
+    gerar_tabela_contemplacao,
+)
 
 
-class CalculoDiluidoRateadoTest(unittest.TestCase):
-    def test_calcula_pos_contemplacao_diluido_rateado_com_percentual_do_plano(self) -> None:
-        resultado = calcular_diluido_rateado(
-            credito=Decimal("120000.00"),
-            taxa_administracao=Decimal("0.20"),
-            fundo_reserva=Decimal("0.03"),
-            lance_proprio=Decimal("50000.04"),
-            lance_embutido=Decimal("30000.00"),
-            seguro_mensal=Decimal("90.04"),
-            parcelas_pagas_sem_seguro=[Decimal("1458.72"), Decimal("1349.64")],
-            percentual_mensal_pos_contemplacao_sem_seguro=Decimal("0.011247"),
-        )
+def simulacao_base(**sobrescritas):
+    parametros = {
+        "credito": Decimal("120000.00"),
+        "taxa_admin_percentual": Decimal("0.20"),
+        "fundo_reserva_percentual": Decimal("0.03"),
+        "lance_proprio": Decimal("50000.04"),
+        "lance_embutido_percentual": Decimal("0.25"),
+        "seguro_percentual": Decimal("0"),
+        "seguro_mensal": Decimal("90.04"),
+        "prazo": 80,
+        "plano": "MAIS POR MENOS",
+        "uso_lance": MODO_REDUZIR_PRAZO,
+        "mes_contemplacao": 2,
+        "percentual_mensal_fundo_comum": Decimal("0.008747"),
+        "percentual_mensal_fundo_reserva": Decimal("0"),
+        "percentual_mensal_taxa_administracao": Decimal("0.002500"),
+        "tratamento_diferenca_mais_por_menos": TRATAMENTO_DIFERENCA_JA_ANTECIPADA,
+    }
+    parametros.update(sobrescritas)
+    return calcular_simulacao(**parametros)
 
-        self.assertEqual(resultado.saldo_contratual_sem_seguro, Decimal("147600.00"))
-        self.assertEqual(resultado.total_amortizado, Decimal("82808.40"))
-        self.assertEqual(resultado.saldo_remanescente_sem_seguro, Decimal("64791.60"))
-        self.assertEqual(resultado.parcela_sem_seguro, Decimal("1349.64"))
-        self.assertEqual(resultado.nova_parcela, Decimal("1439.68"))
-        self.assertEqual(resultado.quantidade_parcelas_restantes, 48)
-        self.assertEqual(resultado.saldo_seguro_futuro, Decimal("4321.92"))
-        self.assertEqual(resultado.saldo_total_futuro, Decimal("69113.52"))
-        self.assertEqual(resultado.diferenca_residual, Decimal("8.88"))
-        self.assertEqual(resultado.ultima_parcela_com_seguro, Decimal("1448.56"))
 
-    def test_tabela_usa_modo_diluido_rateado_sem_dividir_por_parcelas_originais(self) -> None:
-        resultado = calcular_simulacao(
-            credito=Decimal("120000.00"),
-            taxa_admin_percentual=Decimal("0.20"),
-            fundo_reserva_percentual=Decimal("0.03"),
-            lance_proprio=Decimal("50000.04"),
-            lance_embutido_percentual=Decimal("0.25"),
-            seguro_percentual=Decimal("0"),
-            seguro_mensal=Decimal("90.04"),
-            prazo=80,
-            plano="MAIS POR MENOS",
-            uso_lance=MODO_DILUIDO_RATEADO,
-            mes_contemplacao=2,
-            parcelas_pagas_sem_seguro=[Decimal("1458.72"), Decimal("1349.64")],
-            percentual_mensal_pos_contemplacao_sem_seguro=Decimal("0.011247"),
-        )
+class RegrasRegulamentoFiatEmbraconTest(unittest.TestCase):
+    def test_opcoes_visiveis_de_uso_do_lance_nao_incluem_diluido_rateado(self) -> None:
+        self.assertEqual(USOS_LANCE, (MODO_REDUZIR_PRAZO, MODO_REDUZIR_PARCELA))
 
+    def test_reduzir_prazo_mantem_parcela_regular_e_amortiza_da_ultima_para_primeira(self) -> None:
+        resultado = simulacao_base(uso_lance=MODO_REDUZIR_PRAZO)
         primeira_linha = gerar_tabela_contemplacao(resultado)[0]
 
-        self.assertEqual(primeira_linha["Parcelas restantes apos lance"], Decimal("48"))
+        self.assertEqual(resultado.parcela_ate_contemplacao_sem_seguro, Decimal("1349.64"))
         self.assertEqual(primeira_linha["Nova parcela"], Decimal("1439.68"))
-        self.assertEqual(primeira_linha["Saldo apos lance"], Decimal("69113.52"))
+        self.assertEqual(primeira_linha["Parcelas restantes apos lance"], Decimal("19"))
+        self.assertEqual(primeira_linha["Parcelas abatidas"], Decimal("59"))
+        self.assertEqual(primeira_linha["Mes previsto de quitacao"], 21)
+
+    def test_reduzir_parcela_respeita_minimo_regulamentar_e_pode_encerrar_antes(self) -> None:
+        resultado = simulacao_base(
+            uso_lance=MODO_REDUZIR_PARCELA,
+            segmento_bem=SEGMENTO_AUTOMOVEL_MOTO_MOVEIS,
+        )
+        primeira_linha = gerar_tabela_contemplacao(resultado)[0]
+
+        self.assertEqual(primeira_linha["Nova parcela"], Decimal("1290.04"))
+        self.assertEqual(primeira_linha["Parcelas restantes apos lance"], Decimal("22"))
+        self.assertEqual(primeira_linha["Parcelas abatidas"], Decimal("56"))
+        self.assertEqual(primeira_linha["Mes previsto de quitacao"], 24)
+
+    def test_lance_embutido_e_diferenca_do_mais_por_menos_sao_deducoes_separadas(self) -> None:
+        resultado = simulacao_base(
+            tratamento_diferenca_mais_por_menos=TRATAMENTO_DEDUZIR_DO_CREDITO,
+        )
+
+        self.assertEqual(resultado.lance_embutido, Decimal("30000.00"))
+        self.assertEqual(resultado.diferenca_deduzida_credito, Decimal("30000.00"))
+        self.assertEqual(resultado.credito_liquido, Decimal("60000.00"))
 
 
 if __name__ == "__main__":
