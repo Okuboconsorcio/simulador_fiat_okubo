@@ -320,12 +320,14 @@ def gerar_pdf_simulacao(
     )
     conteudo.append(tabela_pdf)
     conteudo.append(Spacer(1, 5))
-    conteudo.append(
-        Paragraph(
-            "Simulador consultivo. Os valores podem variar conforme regra comercial, administradora, assembleia, crédito e vigência do plano.",
-            normal,
-        )
+    aviso_precisao = (
+        "Simulação estimada. O valor exato da administradora depende da Decomposição dos Pagamentos "
+        "do contrato, prazo e situação atual do grupo, Ata da Assembleia Inaugural, tabela comercial, "
+        "crédito vigente na assembleia e percentuais já integralizados."
+        if getattr(resultado, "calculo_estimado", True)
+        else "Simulação consultiva com parâmetros informados. Os valores podem variar conforme atualização da administradora."
     )
+    conteudo.append(Paragraph(aviso_precisao, normal))
 
     doc.build(conteudo)
     buffer.seek(0)
