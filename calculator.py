@@ -320,10 +320,22 @@ def calcular_simulacao(
     total_sem_seguro = quantizar_moeda(credito_d * percentual_total)
     total_com_seguro = quantizar_moeda(total_sem_seguro + seguro_mensal_d * Decimal(prazo_i))
 
-    # Diferença do Mais por Menos (25% do crédito, Cláusula 3.4) --------------
+    # Diferença do Mais por Menos (Cláusula 3.4, §1º) -------------------------
+    # Incisos I, II e IV: a diferença tratada é a "recolhida a menor ANTES da
+    # contemplação" (inciso I, "b"), ou seja, proporcional aos meses pagos:
+    # meses x 25% do ideal mensal de FC+FR. Validado nos extratos reais: o
+    # saldo na contemplação contém exatamente essa diferença proporcional.
+    # Inciso III é a exceção: são 25% fixos do crédito ("será disponibilizado
+    # 75% do crédito"), que amortizam o saldo devedor.
     if plano_norm == "MAIS POR MENOS":
-        diferenca_mpm = quantizar_moeda(credito_d * DIFERENCA_MAIS_POR_MENOS)
+        diferenca_proporcional_pct = (parcela_normal_pct - parcela_mpm_pct) * Decimal(mes_i)
+        diferenca_proporcional = quantizar_moeda(credito_d * diferenca_proporcional_pct)
+        if tratamento == TRATAMENTO_DEDUZIR_DO_CREDITO:
+            diferenca_mpm = quantizar_moeda(credito_d * DIFERENCA_MAIS_POR_MENOS)
+        else:
+            diferenca_mpm = diferenca_proporcional
     else:
+        diferenca_proporcional = Decimal("0")
         diferenca_mpm = Decimal("0")
 
     diferenca_saldo = diferenca_mpm if tratamento == TRATAMENTO_RENEGOCIAR_NO_SALDO else Decimal("0")
@@ -391,22 +403,31 @@ def saldo_percentual_apos_lance(resultado: ResultadoSimulacao, mes: int) -> Deci
     Fórmula validada com exatidão nos extratos reais:
     saldo% = (100% + FR + TA) - meses pagos x parcela% - lance% - abatimentos.
 
-    No Mais por Menos, a diferença de 25% recolhida a menor permanece
-    naturalmente no saldo ("renegociar no saldo"). Se a diferença for paga
-    com recursos próprios ou deduzida do crédito, ela abate 25 pontos do
-    saldo na contemplação.
+    No Mais por Menos, a diferença recolhida a menor até a contemplação
+    (proporcional aos meses pagos) permanece naturalmente no saldo
+    ("renegociar no saldo"). Se for paga com recursos próprios ou já
+    antecipada, o saldo iguala o de quem pagou o ideal; no "deduzir do
+    crédito" (inciso III), 25% do crédito amortizam o saldo.
     """
     pago_pct = resultado.parcela_pre_contemplacao_pct * Decimal(int(mes))
     lance_pct = resultado.lance_total / resultado.credito
     antecipacoes_pct = resultado.outras_antecipacoes / resultado.credito
 
     abate_diferenca = Decimal("0")
-    if resultado.plano == "MAIS POR MENOS" and resultado.tratamento_diferenca_mais_por_menos in (
-        TRATAMENTO_PAGAR_RECURSOS_PROPRIOS,
-        TRATAMENTO_DEDUZIR_DO_CREDITO,
-        TRATAMENTO_DIFERENCA_JA_ANTECIPADA,
-    ):
-        abate_diferenca = DIFERENCA_MAIS_POR_MENOS
+    if resultado.plano == "MAIS POR MENOS":
+        diferenca_proporcional_pct = (
+            resultado.parcela_normal_pct - resultado.parcela_mais_por_menos_pct
+        ) * Decimal(int(mes))
+        if resultado.tratamento_diferenca_mais_por_menos in (
+            TRATAMENTO_PAGAR_RECURSOS_PROPRIOS,
+            TRATAMENTO_DIFERENCA_JA_ANTECIPADA,
+        ):
+            # Incisos II e IV: quitada a diferença recolhida a menor até a
+            # contemplação, o saldo iguala o de quem pagou o percentual ideal.
+            abate_diferenca = diferenca_proporcional_pct
+        elif resultado.tratamento_diferenca_mais_por_menos == TRATAMENTO_DEDUZIR_DO_CREDITO:
+            # Inciso III: 25% do crédito amortizam o saldo devedor.
+            abate_diferenca = DIFERENCA_MAIS_POR_MENOS
 
     saldo = resultado.percentual_total_plano - pago_pct - lance_pct - antecipacoes_pct - abate_diferenca
     return max(Decimal("0"), saldo)
@@ -452,12 +473,28 @@ def calcular_reduzir_prazo(resultado: ResultadoSimulacao, mes: int) -> Resultado
     # Parcela pós-contemplação: percentual pleno do plano.
     parcela_pct = resultado.parcela_normal_pct
 
-    # Diferença do Mais por Menos renegociada: diluída nas parcelas vincendas
-    # (Cláusula 3.4, inciso I).
-    if resultado.plano == "MAIS POR MENOS" and resultado.tratamento_diferenca_mais_por_menos in (
-        TRATAMENTO_RENEGOCIAR_NO_SALDO,
-    ):
-        parcela_pct = parcela_pct + (DIFERENCA_MAIS_POR_MENOS / Decimal(restantes))
+    # Diferença do Mais por Menos recolhida a menor até a contemplação
+    # (proporcional aos meses pagos), renegociada e diluída nas parcelas
+    # vincendas (Cláusula 3.4, inciso I). Se paga com recursos próprios ou
+    # já antecipada, nada é acrescido.
+    abatimento_extra_pct = Decimal("0")
+    if resultado.plano == "MAIS POR MENOS":
+        diferenca_proporcional_pct = (
+            resultado.parcela_normal_pct - resultado.parcela_mais_por_menos_pct
+        ) * Decimal(int(mes))
+        if resultado.tratamento_diferenca_mais_por_menos == TRATAMENTO_RENEGOCIAR_NO_SALDO:
+            parcela_pct = parcela_pct + (diferenca_proporcional_pct / Decimal(restantes))
+        elif resultado.tratamento_diferenca_mais_por_menos == TRATAMENTO_DEDUZIR_DO_CREDITO:
+            # Inciso III: 25% do crédito amortizam o saldo (sem isenção de TA,
+            # pois não é lance) — quitam parcelas adicionais ao percentual pleno.
+            abatimento_extra_pct = DIFERENCA_MAIS_POR_MENOS
+
+    if abatimento_extra_pct > 0:
+        extras = min(restantes, floor_decimal(abatimento_extra_pct / resultado.parcela_normal_pct))
+        restantes -= int(extras)
+        parcelas_abatidas = parcelas_abatidas + extras
+        if restantes <= 0:
+            return _resultado_quitado(mes, meses_originais, "Lance e diferença quitam as contribuições vincendas.")
 
     nova_parcela_sem_seguro = quantizar_moeda(resultado.credito * parcela_pct)
     # Resíduo do lance abate a primeira contribuição seguinte (Cláusula 8ª, "c");
