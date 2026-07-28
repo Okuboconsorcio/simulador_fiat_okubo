@@ -251,30 +251,17 @@ def calcular_diferencas_mais_por_menos(
     return diferenca, Decimal("0"), Decimal("0"), Decimal("0")
 
 
-def cronograma_vincendo_sem_seguro(resultado: ResultadoSimulacao, mes: int) -> list[Decimal]:
-    meses_pela_cota = max(0, resultado.configuracao_plano.prazo_contratado_cota - int(mes))
-    meses_restantes = min(meses_pela_cota, resultado.configuracao_plano.meses_remanescentes_grupo)
-    if meses_restantes == 0:
-        return []
+def meses_restantes_no_prazo(resultado: ResultadoSimulacao, mes: int) -> int:
+    return max(0, resultado.configuracao_plano.prazo_contratado_cota - int(mes))
 
-    if resultado.configuracao_plano.saldo_devedor_percentual > 0:
-        saldo_base = quantizar_moeda(
-            resultado.credito * resultado.configuracao_plano.saldo_devedor_percentual
-        )
-        parcela_base = quantizar_moeda(saldo_base / Decimal(meses_restantes))
-        cronograma = [parcela_base for _ in range(meses_restantes)]
-        ajuste = quantizar_moeda(saldo_base - sum(cronograma, Decimal("0")))
-        cronograma[-1] = quantizar_moeda(cronograma[-1] + ajuste)
-    else:
-        cronograma = [resultado.parcela_ate_contemplacao_sem_seguro for _ in range(meses_restantes)]
 
-    extras = quantizar_moeda(
-        resultado.taxa_administracao_antecipada_valor + resultado.diferenca_adicionada_saldo
+def saldo_total_apos_lance(resultado: ResultadoSimulacao, mes: int) -> Decimal:
+    parcelas_pagas = quantizar_moeda(resultado.parcela_ate_contemplacao * Decimal(int(mes)))
+    amortizacoes = quantizar_moeda(resultado.lance_total + resultado.outras_antecipacoes)
+    return max(
+        Decimal("0"),
+        quantizar_moeda(resultado.total_plano_com_seguro - parcelas_pagas - amortizacoes),
     )
-    if extras:
-        cronograma[-1] = quantizar_moeda(cronograma[-1] + extras)
-
-    return cronograma
 
 
 def amortizar_ordem_inversa(cronograma: Sequence[Decimal], valor_lance: Decimal) -> list[Decimal]:
@@ -296,11 +283,12 @@ def amortizar_ordem_inversa(cronograma: Sequence[Decimal], valor_lance: Decimal)
 
 
 def calcular_reduzir_prazo(resultado: ResultadoSimulacao, mes: int) -> ResultadoAmortizacao:
-    cronograma = cronograma_vincendo_sem_seguro(resultado, mes)
-    if not cronograma:
+    meses_originais = meses_restantes_no_prazo(resultado, mes)
+    saldo_total = saldo_total_apos_lance(resultado, mes)
+    if meses_originais == 0 or saldo_total <= 0:
         return ResultadoAmortizacao(
             parcelas_restantes=Decimal("0"),
-            parcelas_abatidas=Decimal("0"),
+            parcelas_abatidas=Decimal(meses_originais),
             mes_previsto_quitacao=mes,
             nova_parcela="QUITADO",
             saldo_total_futuro=Decimal("0"),
@@ -310,22 +298,19 @@ def calcular_reduzir_prazo(resultado: ResultadoSimulacao, mes: int) -> Resultado
             descricao="Sem contribuições vincendas.",
         )
 
-    cronograma_amortizado = amortizar_ordem_inversa(
-        cronograma,
-        resultado.lance_total + resultado.outras_antecipacoes,
+    quantidade_restante = min(meses_originais, ceil_decimal(saldo_total / resultado.parcela_normal))
+    parcelas_abatidas = max(0, meses_originais - quantidade_restante)
+    saldo_sem_seguro = max(Decimal("0"), quantizar_moeda(saldo_total - (Decimal(quantidade_restante) * resultado.seguro_mensal)))
+    ultima_com_seguro = quantizar_moeda(
+        saldo_total - (Decimal(max(0, quantidade_restante - 1)) * resultado.parcela_normal)
     )
-    parcelas_restantes = [valor for valor in cronograma_amortizado if valor > 0]
-    quantidade_restante = len(parcelas_restantes)
-    saldo_sem_seguro = quantizar_moeda(sum(parcelas_restantes, Decimal("0")))
-    saldo_total = quantizar_moeda(saldo_sem_seguro + (Decimal(quantidade_restante) * resultado.seguro_mensal))
-    ultima_sem_seguro = quantizar_moeda(parcelas_restantes[-1]) if parcelas_restantes else Decimal("0")
-    ultima_com_seguro = quantizar_moeda(ultima_sem_seguro + resultado.seguro_mensal) if parcelas_restantes else Decimal("0")
+    ultima_sem_seguro = max(Decimal("0"), quantizar_moeda(ultima_com_seguro - resultado.seguro_mensal))
 
     return ResultadoAmortizacao(
         parcelas_restantes=Decimal(quantidade_restante),
-        parcelas_abatidas=Decimal(len(cronograma) - quantidade_restante),
+        parcelas_abatidas=Decimal(parcelas_abatidas),
         mes_previsto_quitacao=mes + quantidade_restante,
-        nova_parcela=quantizar_moeda(resultado.parcela_ate_contemplacao_sem_seguro + resultado.seguro_mensal)
+        nova_parcela=resultado.parcela_normal
         if quantidade_restante
         else "QUITADO",
         saldo_total_futuro=saldo_total,
@@ -337,11 +322,12 @@ def calcular_reduzir_prazo(resultado: ResultadoSimulacao, mes: int) -> Resultado
 
 
 def calcular_reduzir_parcela(resultado: ResultadoSimulacao, mes: int) -> ResultadoAmortizacao:
-    cronograma = cronograma_vincendo_sem_seguro(resultado, mes)
-    if not cronograma:
+    meses_originais = meses_restantes_no_prazo(resultado, mes)
+    saldo_total = saldo_total_apos_lance(resultado, mes)
+    if meses_originais == 0 or saldo_total <= 0:
         return ResultadoAmortizacao(
             parcelas_restantes=Decimal("0"),
-            parcelas_abatidas=Decimal("0"),
+            parcelas_abatidas=Decimal(meses_originais),
             mes_previsto_quitacao=mes,
             nova_parcela="QUITADO",
             saldo_total_futuro=Decimal("0"),
@@ -351,54 +337,33 @@ def calcular_reduzir_parcela(resultado: ResultadoSimulacao, mes: int) -> Resulta
             descricao="Sem saldo vincendo.",
         )
 
-    saldo_antes_lance = quantizar_moeda(sum(cronograma, Decimal("0")))
-    saldo_pos_lance = max(
-        Decimal("0"),
-        quantizar_moeda(saldo_antes_lance - resultado.lance_total - resultado.outras_antecipacoes),
-    )
-
-    if saldo_pos_lance == 0:
-        return ResultadoAmortizacao(
-            parcelas_restantes=Decimal("0"),
-            parcelas_abatidas=Decimal(len(cronograma)),
-            mes_previsto_quitacao=mes,
-            nova_parcela="QUITADO",
-            saldo_total_futuro=Decimal("0"),
-            saldo_sem_seguro_futuro=Decimal("0"),
-            ultima_parcela_sem_seguro=Decimal("0"),
-            ultima_parcela_com_seguro=Decimal("0"),
-            descricao="Saldo totalmente amortizado pelo lance.",
-        )
-
-    fator_linear = saldo_pos_lance / saldo_antes_lance if saldo_antes_lance else Decimal("0")
-    parcela_linear_sem_seguro = quantizar_moeda(resultado.parcela_ate_contemplacao_sem_seguro * fator_linear)
     percentual_minimo = PERCENTUAL_MINIMO_SEGMENTO[resultado.configuracao_plano.segmento_bem]
-    parcela_minima_sem_seguro = quantizar_moeda(resultado.credito * percentual_minimo)
-    meses_originais = len(cronograma)
+    parcela_minima = quantizar_moeda((resultado.credito * percentual_minimo) + resultado.seguro_mensal)
+    parcela_linear = quantizar_moeda(saldo_total / Decimal(meses_originais))
 
-    if parcela_linear_sem_seguro < parcela_minima_sem_seguro:
-        parcela_sem_seguro = parcela_minima_sem_seguro
-        quantidade_restante = max(1, ceil_decimal(saldo_pos_lance / parcela_sem_seguro))
+    if parcela_linear < parcela_minima:
+        nova_parcela = parcela_minima
+        quantidade_restante = min(meses_originais, max(1, ceil_decimal(saldo_total / nova_parcela)))
         descricao = "Parcela mínima regulamentar aplicada; a cota pode encerrar antes do prazo original."
     else:
-        parcela_sem_seguro = parcela_linear_sem_seguro
+        nova_parcela = parcela_linear
         quantidade_restante = meses_originais
         descricao = "Amortização percentual/linear mantendo o prazo contratado."
 
-    ultima_sem_seguro = quantizar_moeda(
-        saldo_pos_lance - (Decimal(max(0, quantidade_restante - 1)) * parcela_sem_seguro)
+    ultima_com_seguro = quantizar_moeda(
+        saldo_total - (Decimal(max(0, quantidade_restante - 1)) * nova_parcela)
     )
-    ultima_com_seguro = quantizar_moeda(ultima_sem_seguro + resultado.seguro_mensal)
-    saldo_total = quantizar_moeda(saldo_pos_lance + (Decimal(quantidade_restante) * resultado.seguro_mensal))
+    ultima_sem_seguro = max(Decimal("0"), quantizar_moeda(ultima_com_seguro - resultado.seguro_mensal))
+    saldo_sem_seguro = max(Decimal("0"), quantizar_moeda(saldo_total - (Decimal(quantidade_restante) * resultado.seguro_mensal)))
     parcelas_abatidas = Decimal(meses_originais - quantidade_restante) if quantidade_restante < meses_originais else "-"
 
     return ResultadoAmortizacao(
         parcelas_restantes=Decimal(quantidade_restante),
         parcelas_abatidas=parcelas_abatidas,
         mes_previsto_quitacao=mes + quantidade_restante,
-        nova_parcela=quantizar_moeda(parcela_sem_seguro + resultado.seguro_mensal),
+        nova_parcela=nova_parcela,
         saldo_total_futuro=saldo_total,
-        saldo_sem_seguro_futuro=saldo_pos_lance,
+        saldo_sem_seguro_futuro=saldo_sem_seguro,
         ultima_parcela_sem_seguro=ultima_sem_seguro,
         ultima_parcela_com_seguro=ultima_com_seguro,
         descricao=descricao,
@@ -515,12 +480,17 @@ def calcular_simulacao(
     taxa_admin_antecipada_valor = quantizar_moeda(
         credito_vigente_d * configuracao.taxa_administracao_antecipada_percentual
     )
-    parcela_decomposicao_sem_seguro = quantizar_moeda(credito_vigente_d * percentual_mensal_total)
     total_plano_sem_seguro = quantizar_moeda(credito_vigente_d * (Decimal("1") + taxa_admin_pct_d + fundo_reserva_pct_d))
     total_plano_com_seguro = quantizar_moeda(total_plano_sem_seguro + (seguro_mensal_d * Decimal(prazo_i)))
-    parcela_normal_sem_seguro = parcela_decomposicao_sem_seguro
-    parcela_mais_por_menos_sem_seguro = parcela_decomposicao_sem_seguro
-    parcela_ate_contemplacao_sem_seguro = parcela_decomposicao_sem_seguro
+    parcela_normal_sem_seguro = quantizar_moeda(total_plano_sem_seguro / Decimal(prazo_i))
+    parcela_mais_por_menos_sem_seguro = quantizar_moeda(
+        credito_vigente_d
+        * ((configuracao.taxa_cobertura_mais_por_menos * (Decimal("1") + fundo_reserva_pct_d)) + taxa_admin_pct_d)
+        / Decimal(prazo_i)
+    )
+    parcela_ate_contemplacao_sem_seguro = (
+        parcela_mais_por_menos_sem_seguro if plano_normalizado == "MAIS POR MENOS" else parcela_normal_sem_seguro
+    )
     parcela_normal = quantizar_moeda(parcela_normal_sem_seguro + seguro_mensal_d)
     parcela_mais_por_menos = quantizar_moeda(parcela_mais_por_menos_sem_seguro + seguro_mensal_d)
     parcela_ate_contemplacao = quantizar_moeda(parcela_ate_contemplacao_sem_seguro + seguro_mensal_d)
