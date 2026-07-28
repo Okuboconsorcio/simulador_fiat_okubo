@@ -12,11 +12,14 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from calculator import (
+    CONFIGURACOES_TABELAS,
     PLANOS,
-    PRAZOS,
+    TABELAS,
+    TRATAMENTOS_DIFERENCA_MPM,
     USOS_LANCE,
     calcular_simulacao,
     gerar_tabela_contemplacao,
+    prazos_disponiveis,
 )
 from logos import LOGOS
 from pdf_generator import gerar_pdf_simulacao, nome_arquivo_pdf
@@ -28,8 +31,22 @@ LANCE_FIXO_PERCENTUAIS = {
 }
 LIMITE_LANCE_EMBUTIDO_PERCENTUAL = Decimal("25.0")
 COR_MARCA = "#3B369E"
-SEGMENTO_BEM_FIXO = "AUTOMOVEL_MOTOCICLETA_DEMAIS_BENS_MOVEIS"
-TRATAMENTO_DIFERENCA_MPM_FIXO = "RENEGOCIAR_NO_SALDO"
+
+ROTULOS_TABELAS = {
+    "LEVES": "Leves — automóveis e motos (FTA)",
+    "PESADOS": "Pesados — caminhões e ônibus (TSA)",
+}
+ROTULOS_USO_LANCE = {
+    "REDUZIR_PRAZO": "Reduzir prazo (mantém a parcela)",
+    "REDUZIR_PARCELA": "Reduzir parcela (mantém o prazo)",
+}
+ROTULOS_TRATAMENTO_MPM = {
+    "RENEGOCIAR_NO_SALDO": "Renegociar no saldo devedor (diluir nas parcelas)",
+    "PAGAR_RECURSOS_PROPRIOS": "Pagar com recursos próprios na contemplação",
+    "DEDUZIR_DO_CREDITO": "Deduzir do crédito liberado",
+    "DIFERENCA_JA_ANTECIPADA": "Já antecipada / paga anteriormente",
+}
+CASAS_DECIMAIS_SEGURO = 6
 AVISO_PRECISAO = (
     "Simulação estimada. O valor exato da administradora depende da Decomposição dos Pagamentos "
     "do contrato, prazo e situação atual do grupo, Ata da Assembleia Inaugural, tabela comercial, "
@@ -110,6 +127,23 @@ def marcar_lance_embutido() -> None:
 
 def marcar_tipo_lance() -> None:
     st.session_state["ultimo_lance_alterado"] = "embutido"
+
+
+def codigo_tabela_selecionada() -> str:
+    rotulo = st.session_state.get("tabela_select", ROTULOS_TABELAS["LEVES"])
+    for codigo, texto in ROTULOS_TABELAS.items():
+        if texto == rotulo:
+            return codigo
+    return "LEVES"
+
+
+def aplicar_padroes_tabela() -> None:
+    config = CONFIGURACOES_TABELAS[codigo_tabela_selecionada()]
+    st.session_state["taxa_admin_input"] = formatar_percentual_input(config.taxa_admin * 100)
+    st.session_state["fundo_reserva_input"] = formatar_percentual_input(config.fundo_reserva * 100)
+    st.session_state["seguro_input"] = formatar_percentual_input(
+        config.seguro_mensal_pct * 100, CASAS_DECIMAIS_SEGURO
+    )
 
 
 def normalizar_campo_percentual(chave: str, casas_decimais: int = 2) -> None:
@@ -518,7 +552,14 @@ def montar_resumo(
     dados_proposta: dict[str, object],
     tipo_lance: str,
     uso_lance: str,
+    tabela: str = "LEVES",
+    tratamento_mpm: str | None = None,
 ) -> str:
+    linha_tratamento = (
+        [f"Diferença Mais por Menos: {ROTULOS_TRATAMENTO_MPM.get(tratamento_mpm, tratamento_mpm)}"]
+        if tratamento_mpm and resultado.plano == "MAIS POR MENOS"
+        else []
+    )
     return "\n".join(
         [
             "Simulação de plano Fiat",
@@ -540,11 +581,13 @@ def montar_resumo(
             "",
             "Informações do plano",
             "",
+            f"Tabela: {ROTULOS_TABELAS.get(tabela, tabela)}",
             f"Crédito contratado: {moeda(resultado.credito)}",
             f"Prazo: {resultado.prazo} meses",
             f"Plano: {resultado.plano}",
             f"Tipo de Lance: {tipo_lance}",
-            f"Uso do lance: {uso_lance}",
+            f"Uso do lance: {ROTULOS_USO_LANCE.get(uso_lance, uso_lance)}",
+            *linha_tratamento,
             f"Lance recurso próprio: {moeda(resultado.lance_proprio)}",
             f"Lance embutido: {moeda(resultado.lance_embutido)} ({percentual(resultado.lance_embutido_percentual)})",
             f"Lance total: {moeda(resultado.lance_total)} ({percentual(resultado.lance_total_percentual)})",
@@ -758,21 +801,42 @@ def main() -> None:
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            credito = campo_monetario("Crédito a contratar", "credito_input", 100000.0)
+            st.selectbox(
+                "Tabela",
+                tuple(ROTULOS_TABELAS.values()),
+                index=0,
+                key="tabela_select",
+                on_change=aplicar_padroes_tabela,
+                help="Leves: automóveis e motos (TA 20%). Pesados: caminhões e ônibus (TA 13%).",
+            )
+            tabela = codigo_tabela_selecionada()
+            config_tabela = CONFIGURACOES_TABELAS[tabela]
 
         with col2:
-            prazo = st.selectbox("Prazo", PRAZOS, index=4)
+            credito = campo_monetario("Crédito a contratar", "credito_input", 100000.0)
 
         with col3:
             plano = st.selectbox("Plano", PLANOS, index=1)
 
-        taxa_col, fundo_col, seguro_col = st.columns(3)
+        prazo_col, taxa_col, fundo_col, seguro_col = st.columns(4)
+        with prazo_col:
+            opcoes_prazo = prazos_disponiveis(tabela, plano)
+            prazo = st.selectbox("Prazo", opcoes_prazo, index=len(opcoes_prazo) - 1)
         with taxa_col:
-            taxa_admin_pct = campo_percentual("Taxa administrativa", "taxa_admin_input", 20.0)
+            taxa_admin_pct = campo_percentual(
+                "Taxa administrativa", "taxa_admin_input", config_tabela.taxa_admin * 100
+            )
         with fundo_col:
-            fundo_reserva_pct = campo_percentual("Fundo reserva", "fundo_reserva_input", 3.0)
+            fundo_reserva_pct = campo_percentual(
+                "Fundo reserva", "fundo_reserva_input", config_tabela.fundo_reserva * 100
+            )
         with seguro_col:
-            seguro_pct = campo_percentual("Seguro vida ao mês", "seguro_input", 0.075, casas_decimais=3)
+            seguro_pct = campo_percentual(
+                "Seguro vida ao mês",
+                "seguro_input",
+                config_tabela.seguro_mensal_pct * 100,
+                casas_decimais=CASAS_DECIMAIS_SEGURO,
+            )
 
         tipo_lance = st.radio(
             "Tipo de lance ofertado",
@@ -790,36 +854,45 @@ def main() -> None:
                 "Uso do lance",
                 USOS_LANCE,
                 index=USOS_LANCE.index("REDUZIR_PRAZO"),
+                format_func=lambda codigo: ROTULOS_USO_LANCE.get(codigo, codigo),
             )
         with col5:
             mes_contemplacao = st.number_input(
                 "Assembleia da contemplação",
                 min_value=1,
-                max_value=120,
+                max_value=int(prazo),
                 value=1,
                 step=1,
             )
+
+        if plano == "MAIS POR MENOS":
+            tratamento_mpm = st.selectbox(
+                "Diferença do Mais por Menos (25% recolhido a menor)",
+                TRATAMENTOS_DIFERENCA_MPM,
+                index=0,
+                format_func=lambda codigo: ROTULOS_TRATAMENTO_MPM.get(codigo, codigo),
+                help=(
+                    "Até a contemplação você paga 75% do fundo comum e do fundo de reserva. "
+                    "Na contemplação, a diferença de 25% do crédito precisa ser tratada: "
+                    "renegociada no saldo, paga à vista, deduzida do crédito ou já antecipada."
+                ),
+            )
+        else:
+            tratamento_mpm = "RENEGOCIAR_NO_SALDO"
 
     resultado = calcular_simulacao(
         credito=credito,
         lance_proprio=lance_proprio,
         lance_embutido_percentual=lance_embutido_pct,
+        tabela=tabela,
         taxa_admin_percentual=taxa_admin_pct,
         fundo_reserva_percentual=fundo_reserva_pct,
         seguro_percentual=seguro_pct,
         prazo=prazo,
         plano=plano,
         uso_lance=uso_lance,
-        mes_contemplacao=mes_contemplacao,
-        prazo_total_grupo=int(prazo),
-        prazo_contratado_cota=int(prazo),
-        meses_remanescentes_grupo=max(0, int(prazo) - int(mes_contemplacao)),
-        taxa_administracao_antecipada_percentual=Decimal("0"),
-        saldo_devedor_percentual=Decimal("0"),
-        segmento_bem=SEGMENTO_BEM_FIXO,
-        tratamento_diferenca_mais_por_menos=TRATAMENTO_DIFERENCA_MPM_FIXO,
-        outras_antecipacoes=Decimal("0"),
-        outras_deducoes_credito=Decimal("0"),
+        mes_contemplacao=int(mes_contemplacao),
+        tratamento_diferenca_mais_por_menos=tratamento_mpm,
     )
 
     st.markdown('<div class="section-title">Resultado</div>', unsafe_allow_html=True)
@@ -835,6 +908,7 @@ def main() -> None:
             f"""
             <div class="result-box">
                 <strong>Resumo do plano</strong><br><br>
+                Tabela: <strong>{ROTULOS_TABELAS.get(tabela, tabela)}</strong><br>
                 Crédito total: <strong>{moeda(resultado.credito)}</strong><br>
                 Prazo: <strong>{resultado.prazo} meses</strong><br>
                 Lance total: <strong>{moeda(resultado.lance_total)} ({percentual(resultado.lance_total_percentual)})</strong><br>
@@ -849,7 +923,9 @@ def main() -> None:
 
     with r2:
         st.markdown("**Resumo para envio**")
-        resumo = montar_resumo(resultado, dados_proposta, tipo_lance, uso_lance)
+        resumo = montar_resumo(
+            resultado, dados_proposta, tipo_lance, uso_lance, tabela, tratamento_mpm
+        )
         renderizar_resumo_copiavel(resumo)
 
     if resultado.calculo_estimado:
@@ -891,7 +967,12 @@ def main() -> None:
         renderizar_tabela_cenario(df)
 
         csv = df.to_csv(index=False, sep=";").encode("utf-8-sig")
-        pdf = gerar_pdf_simulacao(dados_proposta, resultado, f"{tipo_lance} - {uso_lance}", df)
+        pdf = gerar_pdf_simulacao(
+            dados_proposta,
+            resultado,
+            f"{tipo_lance} - {ROTULOS_USO_LANCE.get(uso_lance, uso_lance)}",
+            df,
+        )
         col_csv, col_pdf = st.columns(2)
         with col_csv:
             st.download_button(
