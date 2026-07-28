@@ -873,8 +873,10 @@ def main() -> None:
                 format_func=lambda codigo: ROTULOS_TRATAMENTO_MPM.get(codigo, codigo),
                 help=(
                     "Até a contemplação você paga 75% do fundo comum e do fundo de reserva. "
-                    "Na contemplação, a diferença de 25% do crédito precisa ser tratada: "
-                    "renegociada no saldo, paga à vista, deduzida do crédito ou já antecipada."
+                    "Na contemplação, a diferença recolhida a menor até ali (proporcional às "
+                    "assembleias pagas) precisa ser tratada: renegociada no saldo, paga à vista "
+                    "ou já antecipada. Exceção: 'Deduzir do crédito' libera 75% do crédito e "
+                    "os 25% restantes amortizam o saldo devedor."
                 ),
             )
         else:
