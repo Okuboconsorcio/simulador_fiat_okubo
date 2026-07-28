@@ -29,7 +29,7 @@ LANCE_FIXO_PERCENTUAIS = {
 LIMITE_LANCE_EMBUTIDO_PERCENTUAL = Decimal("25.0")
 COR_MARCA = "#3B369E"
 SEGMENTO_BEM_FIXO = "AUTOMOVEL_MOTOCICLETA_DEMAIS_BENS_MOVEIS"
-TRATAMENTO_DIFERENCA_MPM_FIXO = "DIFERENCA_JA_ANTECIPADA"
+TRATAMENTO_DIFERENCA_MPM_FIXO = "RENEGOCIAR_NO_SALDO"
 AVISO_PRECISAO = (
     "Simulação estimada. O valor exato da administradora depende da Decomposição dos Pagamentos "
     "do contrato, prazo e situação atual do grupo, Ata da Assembleia Inaugural, tabela comercial, "
