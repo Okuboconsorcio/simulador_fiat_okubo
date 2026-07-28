@@ -11,7 +11,15 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
-from calculator import MODO_DILUIDO_RATEADO, PLANOS, PRAZOS, USOS_LANCE, calcular_simulacao, gerar_tabela_contemplacao
+from calculator import (
+    PLANOS,
+    PRAZOS,
+    SEGMENTOS_BEM,
+    TRATAMENTOS_DIFERENCA_MPM,
+    USOS_LANCE,
+    calcular_simulacao,
+    gerar_tabela_contemplacao,
+)
 from logos import LOGOS
 from pdf_generator import gerar_pdf_simulacao, nome_arquivo_pdf
 
@@ -22,12 +30,11 @@ LANCE_FIXO_PERCENTUAIS = {
 }
 LIMITE_LANCE_EMBUTIDO_PERCENTUAL = Decimal("25.0")
 COR_MARCA = "#3B369E"
-USOS_LANCE_ROTULOS = {
-    "REDUZIR_PARCELA": "Reduzir parcela",
-    "REDUZIR_PRAZO": "Reduzir prazo",
-    "DILUIDO_RATEADO": "Diluído/rateado",
-}
-USOS_LANCE_POR_ROTULO = {rotulo: uso for uso, rotulo in USOS_LANCE_ROTULOS.items()}
+AVISO_PRECISAO = (
+    "Simulação estimada. O valor exato da administradora depende da Decomposição dos Pagamentos "
+    "do contrato, prazo e situação atual do grupo, Ata da Assembleia Inaugural, tabela comercial, "
+    "crédito vigente na assembleia e percentuais já integralizados."
+)
 
 
 st.set_page_config(
@@ -506,7 +513,13 @@ def renderizar_logos() -> None:
     )
 
 
-def montar_resumo(resultado, dados_proposta: dict[str, object], tipo_lance: str, uso_lance_rotulo: str) -> str:
+def montar_resumo(
+    resultado,
+    dados_proposta: dict[str, object],
+    tipo_lance: str,
+    uso_lance: str,
+    tratamento_diferenca: str,
+) -> str:
     return "\n".join(
         [
             "Simulação de plano Fiat",
@@ -532,7 +545,8 @@ def montar_resumo(resultado, dados_proposta: dict[str, object], tipo_lance: str,
             f"Prazo: {resultado.prazo} meses",
             f"Plano: {resultado.plano}",
             f"Tipo de Lance: {tipo_lance}",
-            f"Uso do lance: {uso_lance_rotulo}",
+            f"Uso do lance: {uso_lance}",
+            f"Tratamento da diferença de 25%: {tratamento_diferenca}",
             f"Lance recurso próprio: {moeda(resultado.lance_proprio)}",
             f"Lance embutido: {moeda(resultado.lance_embutido)} ({percentual(resultado.lance_embutido_percentual)})",
             f"Lance total: {moeda(resultado.lance_total)} ({percentual(resultado.lance_total_percentual)})",
@@ -540,6 +554,8 @@ def montar_resumo(resultado, dados_proposta: dict[str, object], tipo_lance: str,
             f"Parcela até contemplação: {moeda(resultado.parcela_ate_contemplacao)}",
             f"Total do plano com seguro: {moeda(resultado.total_plano_com_seguro)}",
             f"Taxa administrativa: {percentual(resultado.taxa_admin_percentual)}",
+            "",
+            AVISO_PRECISAO,
         ]
     )
 
@@ -772,35 +788,129 @@ def main() -> None:
 
         col4, col5 = st.columns([1.0, 1.0])
         with col4:
-            usos_rotulos = [USOS_LANCE_ROTULOS[uso] for uso in USOS_LANCE]
-            uso_lance_rotulo = st.selectbox(
+            uso_lance = st.selectbox(
                 "Uso do lance",
-                usos_rotulos,
-                index=USOS_LANCE.index(MODO_DILUIDO_RATEADO),
+                USOS_LANCE,
+                index=USOS_LANCE.index("REDUZIR_PRAZO"),
             )
-            uso_lance = USOS_LANCE_POR_ROTULO[uso_lance_rotulo]
         with col5:
             mes_contemplacao = st.number_input(
-                "Simular contemplação a partir do mês",
+                "Assembleia da contemplação",
                 min_value=1,
                 max_value=120,
                 value=1,
                 step=1,
             )
 
-        col6, col7 = st.columns([1.0, 1.0])
-        with col6:
-            percentual_pos_pct = campo_percentual(
-                "Percentual mensal pós-contemplação sem seguro",
-                "percentual_pos_contemplacao_input",
-                Decimal("1.1247"),
-                casas_decimais=4,
+        tratamento_diferenca = st.selectbox(
+            "Tratamento da diferença de 25% na contemplação",
+            TRATAMENTOS_DIFERENCA_MPM,
+            index=TRATAMENTOS_DIFERENCA_MPM.index("DIFERENCA_JA_ANTECIPADA"),
+            help=(
+                "Esse campo só afeta o plano Mais por Menos quando houver diferença de 25% "
+                "a tratar na contemplação."
+            ),
+        )
+
+        with st.expander("Parâmetros do regulamento", expanded=False):
+            st.caption(
+                "Preencha estes dados quando tiver a decomposição do contrato, ata da assembleia "
+                "e tabela comercial. Sem esses documentos, o resultado permanece como simulação estimada."
             )
-        with col7:
-            outras_antecipacoes = campo_monetario(
-                "Outras antecipações",
-                "outras_antecipacoes_input",
-                Decimal("0.00"),
+            reg1, reg2, reg3 = st.columns(3)
+            with reg1:
+                prazo_total_grupo = st.number_input(
+                    "Prazo total do grupo",
+                    min_value=1,
+                    max_value=240,
+                    value=int(prazo),
+                    step=1,
+                )
+            with reg2:
+                prazo_contratado_cota = st.number_input(
+                    "Prazo contratado da cota",
+                    min_value=1,
+                    max_value=240,
+                    value=int(prazo),
+                    step=1,
+                )
+            with reg3:
+                meses_remanescentes_grupo = st.number_input(
+                    "Meses remanescentes do grupo",
+                    min_value=0,
+                    max_value=240,
+                    value=max(0, int(prazo) - int(mes_contemplacao)),
+                    step=1,
+                )
+
+            reg4, reg5, reg6 = st.columns(3)
+            with reg4:
+                percentual_fundo_comum = campo_percentual(
+                    "Percentual mensal de fundo comum",
+                    "percentual_mensal_fundo_comum_input",
+                    Decimal("0.8747"),
+                    casas_decimais=4,
+                )
+            with reg5:
+                percentual_fundo_reserva = campo_percentual(
+                    "Percentual mensal de fundo de reserva",
+                    "percentual_mensal_fundo_reserva_input",
+                    Decimal("0.0000"),
+                    casas_decimais=4,
+                )
+            with reg6:
+                percentual_taxa_admin_mensal = campo_percentual(
+                    "Percentual mensal de taxa administrativa",
+                    "percentual_mensal_taxa_admin_input",
+                    Decimal("0.2500"),
+                    casas_decimais=4,
+                )
+
+            reg7, reg8, reg9 = st.columns(3)
+            with reg7:
+                taxa_admin_antecipada_pct = campo_percentual(
+                    "Taxa administrativa antecipada",
+                    "taxa_admin_antecipada_input",
+                    Decimal("0.0000"),
+                    casas_decimais=4,
+                )
+            with reg8:
+                seguro_mensal_valor = campo_monetario(
+                    "Seguro mensal em valor",
+                    "seguro_mensal_valor_input",
+                    Decimal("0.00"),
+                )
+            with reg9:
+                saldo_devedor_pct = campo_percentual(
+                    "Saldo devedor em percentual",
+                    "saldo_devedor_percentual_input",
+                    Decimal("0.0000"),
+                    casas_decimais=4,
+                )
+
+            reg10, reg11, reg12 = st.columns(3)
+            with reg10:
+                segmento_bem = st.selectbox("Segmento do bem", SEGMENTOS_BEM)
+            with reg11:
+                outras_antecipacoes = campo_monetario(
+                    "Outras antecipações",
+                    "outras_antecipacoes_input",
+                    Decimal("0.00"),
+                )
+            with reg12:
+                outras_deducoes_credito = campo_monetario(
+                    "Outras deduções do crédito",
+                    "outras_deducoes_credito_input",
+                    Decimal("0.00"),
+                )
+
+            criterios_ata = st.text_area(
+                "Critérios da Ata da Assembleia Inaugural",
+                placeholder="Ex.: regra de reajuste, seguro, fundo comum, fundo de reserva, taxa administrativa...",
+            )
+            criterios_tabela = st.text_area(
+                "Critérios da tabela de vendas",
+                placeholder="Ex.: plano, percentual de parcela, regra comercial e condições vigentes...",
             )
 
     resultado = calcular_simulacao(
@@ -814,8 +924,21 @@ def main() -> None:
         plano=plano,
         uso_lance=uso_lance,
         mes_contemplacao=mes_contemplacao,
-        percentual_mensal_pos_contemplacao_sem_seguro=percentual_pos_pct,
+        prazo_total_grupo=prazo_total_grupo,
+        prazo_contratado_cota=prazo_contratado_cota,
+        meses_remanescentes_grupo=meses_remanescentes_grupo,
+        percentual_mensal_fundo_comum=percentual_fundo_comum,
+        percentual_mensal_fundo_reserva=percentual_fundo_reserva,
+        percentual_mensal_taxa_administracao=percentual_taxa_admin_mensal,
+        taxa_administracao_antecipada_percentual=taxa_admin_antecipada_pct,
+        saldo_devedor_percentual=saldo_devedor_pct,
+        segmento_bem=segmento_bem,
+        tratamento_diferenca_mais_por_menos=tratamento_diferenca,
         outras_antecipacoes=outras_antecipacoes,
+        outras_deducoes_credito=outras_deducoes_credito,
+        seguro_mensal=seguro_mensal_valor if seguro_mensal_valor > 0 else None,
+        criterios_ata_assembleia_inaugural=criterios_ata,
+        criterios_tabela_vendas=criterios_tabela,
     )
 
     st.markdown('<div class="section-title">Resultado</div>', unsafe_allow_html=True)
@@ -845,8 +968,11 @@ def main() -> None:
 
     with r2:
         st.markdown("**Resumo para envio**")
-        resumo = montar_resumo(resultado, dados_proposta, tipo_lance, uso_lance_rotulo)
+        resumo = montar_resumo(resultado, dados_proposta, tipo_lance, uso_lance, tratamento_diferenca)
         renderizar_resumo_copiavel(resumo)
+
+    if resultado.calculo_estimado:
+        st.warning(AVISO_PRECISAO)
 
     st.markdown('<div class="section-title">Cenário de contemplação</div>', unsafe_allow_html=True)
     tabela = gerar_tabela_contemplacao(resultado)
@@ -858,7 +984,7 @@ def main() -> None:
             "faltam 33 parcelas após o lance."
         )
         df = pd.DataFrame(tabela)
-        df["Assembleia"] = df["Mes de contemplacao"].apply(lambda mes: f"{inteiro(mes)}\u00aa Assembleia")
+        df["Assembleia"] = df["Mes de contemplacao"].apply(lambda mes: f"{inteiro(mes)}ª Assembleia")
         df = df[
             [
                 "Assembleia",
@@ -871,7 +997,7 @@ def main() -> None:
         ].copy()
         df["Parcelas restantes apos lance"] = df["Parcelas restantes apos lance"].apply(inteiro)
         df["Parcelas abatidas"] = df["Parcelas abatidas"].apply(inteiro)
-        df["Mes previsto de quitacao"] = df["Mes previsto de quitacao"].apply(lambda mes: f"{inteiro(mes)}\u00aa Assembleia")
+        df["Mes previsto de quitacao"] = df["Mes previsto de quitacao"].apply(lambda mes: f"{inteiro(mes)}ª Assembleia")
         df["Nova parcela"] = df["Nova parcela"].apply(moeda)
         df["Saldo apos lance"] = df["Saldo apos lance"].apply(moeda)
         df = df.rename(
@@ -884,7 +1010,7 @@ def main() -> None:
         renderizar_tabela_cenario(df)
 
         csv = df.to_csv(index=False, sep=";").encode("utf-8-sig")
-        pdf = gerar_pdf_simulacao(dados_proposta, resultado, f"{tipo_lance} - {uso_lance_rotulo}", df)
+        pdf = gerar_pdf_simulacao(dados_proposta, resultado, f"{tipo_lance} - {uso_lance}", df)
         col_csv, col_pdf = st.columns(2)
         with col_csv:
             st.download_button(
@@ -903,9 +1029,7 @@ def main() -> None:
     else:
         st.info("Para simular a contemplação, escolha um mês menor que o prazo total.")
 
-    st.caption(
-        "Simulador consultivo. Os valores podem variar conforme regra comercial, administradora, assembleia, crédito e vigência do plano."
-    )
+    st.caption(AVISO_PRECISAO)
 
 
 if __name__ == "__main__":
