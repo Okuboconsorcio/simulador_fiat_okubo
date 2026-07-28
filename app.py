@@ -14,8 +14,6 @@ import streamlit.components.v1 as components
 from calculator import (
     PLANOS,
     PRAZOS,
-    SEGMENTOS_BEM,
-    TRATAMENTOS_DIFERENCA_MPM,
     USOS_LANCE,
     calcular_simulacao,
     gerar_tabela_contemplacao,
@@ -30,6 +28,8 @@ LANCE_FIXO_PERCENTUAIS = {
 }
 LIMITE_LANCE_EMBUTIDO_PERCENTUAL = Decimal("25.0")
 COR_MARCA = "#3B369E"
+SEGMENTO_BEM_FIXO = "AUTOMOVEL_MOTOCICLETA_DEMAIS_BENS_MOVEIS"
+TRATAMENTO_DIFERENCA_MPM_FIXO = "DIFERENCA_JA_ANTECIPADA"
 AVISO_PRECISAO = (
     "Simulação estimada. O valor exato da administradora depende da Decomposição dos Pagamentos "
     "do contrato, prazo e situação atual do grupo, Ata da Assembleia Inaugural, tabela comercial, "
@@ -518,7 +518,6 @@ def montar_resumo(
     dados_proposta: dict[str, object],
     tipo_lance: str,
     uso_lance: str,
-    tratamento_diferenca: str,
 ) -> str:
     return "\n".join(
         [
@@ -546,7 +545,6 @@ def montar_resumo(
             f"Plano: {resultado.plano}",
             f"Tipo de Lance: {tipo_lance}",
             f"Uso do lance: {uso_lance}",
-            f"Tratamento da diferença de 25%: {tratamento_diferenca}",
             f"Lance recurso próprio: {moeda(resultado.lance_proprio)}",
             f"Lance embutido: {moeda(resultado.lance_embutido)} ({percentual(resultado.lance_embutido_percentual)})",
             f"Lance total: {moeda(resultado.lance_total)} ({percentual(resultado.lance_total_percentual)})",
@@ -802,117 +800,6 @@ def main() -> None:
                 step=1,
             )
 
-        tratamento_diferenca = st.selectbox(
-            "Tratamento da diferença de 25% na contemplação",
-            TRATAMENTOS_DIFERENCA_MPM,
-            index=TRATAMENTOS_DIFERENCA_MPM.index("DIFERENCA_JA_ANTECIPADA"),
-            help=(
-                "Esse campo só afeta o plano Mais por Menos quando houver diferença de 25% "
-                "a tratar na contemplação."
-            ),
-        )
-
-        with st.expander("Parâmetros do regulamento", expanded=False):
-            st.caption(
-                "Preencha estes dados quando tiver a decomposição do contrato, ata da assembleia "
-                "e tabela comercial. Sem esses documentos, o resultado permanece como simulação estimada."
-            )
-            reg1, reg2, reg3 = st.columns(3)
-            with reg1:
-                prazo_total_grupo = st.number_input(
-                    "Prazo total do grupo",
-                    min_value=1,
-                    max_value=240,
-                    value=int(prazo),
-                    step=1,
-                )
-            with reg2:
-                prazo_contratado_cota = st.number_input(
-                    "Prazo contratado da cota",
-                    min_value=1,
-                    max_value=240,
-                    value=int(prazo),
-                    step=1,
-                )
-            with reg3:
-                meses_remanescentes_grupo = st.number_input(
-                    "Meses remanescentes do grupo",
-                    min_value=0,
-                    max_value=240,
-                    value=max(0, int(prazo) - int(mes_contemplacao)),
-                    step=1,
-                )
-
-            reg4, reg5, reg6 = st.columns(3)
-            with reg4:
-                percentual_fundo_comum = campo_percentual(
-                    "Percentual mensal de fundo comum",
-                    "percentual_mensal_fundo_comum_input",
-                    Decimal("0.8747"),
-                    casas_decimais=4,
-                )
-            with reg5:
-                percentual_fundo_reserva = campo_percentual(
-                    "Percentual mensal de fundo de reserva",
-                    "percentual_mensal_fundo_reserva_input",
-                    Decimal("0.0000"),
-                    casas_decimais=4,
-                )
-            with reg6:
-                percentual_taxa_admin_mensal = campo_percentual(
-                    "Percentual mensal de taxa administrativa",
-                    "percentual_mensal_taxa_admin_input",
-                    Decimal("0.2500"),
-                    casas_decimais=4,
-                )
-
-            reg7, reg8, reg9 = st.columns(3)
-            with reg7:
-                taxa_admin_antecipada_pct = campo_percentual(
-                    "Taxa administrativa antecipada",
-                    "taxa_admin_antecipada_input",
-                    Decimal("0.0000"),
-                    casas_decimais=4,
-                )
-            with reg8:
-                seguro_mensal_valor = campo_monetario(
-                    "Seguro mensal em valor",
-                    "seguro_mensal_valor_input",
-                    Decimal("0.00"),
-                )
-            with reg9:
-                saldo_devedor_pct = campo_percentual(
-                    "Saldo devedor em percentual",
-                    "saldo_devedor_percentual_input",
-                    Decimal("0.0000"),
-                    casas_decimais=4,
-                )
-
-            reg10, reg11, reg12 = st.columns(3)
-            with reg10:
-                segmento_bem = st.selectbox("Segmento do bem", SEGMENTOS_BEM)
-            with reg11:
-                outras_antecipacoes = campo_monetario(
-                    "Outras antecipações",
-                    "outras_antecipacoes_input",
-                    Decimal("0.00"),
-                )
-            with reg12:
-                outras_deducoes_credito = campo_monetario(
-                    "Outras deduções do crédito",
-                    "outras_deducoes_credito_input",
-                    Decimal("0.00"),
-                )
-
-            criterios_ata = st.text_area(
-                "Critérios da Ata da Assembleia Inaugural",
-                placeholder="Ex.: regra de reajuste, seguro, fundo comum, fundo de reserva, taxa administrativa...",
-            )
-            criterios_tabela = st.text_area(
-                "Critérios da tabela de vendas",
-                placeholder="Ex.: plano, percentual de parcela, regra comercial e condições vigentes...",
-            )
-
     resultado = calcular_simulacao(
         credito=credito,
         lance_proprio=lance_proprio,
@@ -924,21 +811,15 @@ def main() -> None:
         plano=plano,
         uso_lance=uso_lance,
         mes_contemplacao=mes_contemplacao,
-        prazo_total_grupo=prazo_total_grupo,
-        prazo_contratado_cota=prazo_contratado_cota,
-        meses_remanescentes_grupo=meses_remanescentes_grupo,
-        percentual_mensal_fundo_comum=percentual_fundo_comum,
-        percentual_mensal_fundo_reserva=percentual_fundo_reserva,
-        percentual_mensal_taxa_administracao=percentual_taxa_admin_mensal,
-        taxa_administracao_antecipada_percentual=taxa_admin_antecipada_pct,
-        saldo_devedor_percentual=saldo_devedor_pct,
-        segmento_bem=segmento_bem,
-        tratamento_diferenca_mais_por_menos=tratamento_diferenca,
-        outras_antecipacoes=outras_antecipacoes,
-        outras_deducoes_credito=outras_deducoes_credito,
-        seguro_mensal=seguro_mensal_valor if seguro_mensal_valor > 0 else None,
-        criterios_ata_assembleia_inaugural=criterios_ata,
-        criterios_tabela_vendas=criterios_tabela,
+        prazo_total_grupo=int(prazo),
+        prazo_contratado_cota=int(prazo),
+        meses_remanescentes_grupo=max(0, int(prazo) - int(mes_contemplacao)),
+        taxa_administracao_antecipada_percentual=Decimal("0"),
+        saldo_devedor_percentual=Decimal("0"),
+        segmento_bem=SEGMENTO_BEM_FIXO,
+        tratamento_diferenca_mais_por_menos=TRATAMENTO_DIFERENCA_MPM_FIXO,
+        outras_antecipacoes=Decimal("0"),
+        outras_deducoes_credito=Decimal("0"),
     )
 
     st.markdown('<div class="section-title">Resultado</div>', unsafe_allow_html=True)
@@ -968,7 +849,7 @@ def main() -> None:
 
     with r2:
         st.markdown("**Resumo para envio**")
-        resumo = montar_resumo(resultado, dados_proposta, tipo_lance, uso_lance, tratamento_diferenca)
+        resumo = montar_resumo(resultado, dados_proposta, tipo_lance, uso_lance)
         renderizar_resumo_copiavel(resumo)
 
     if resultado.calculo_estimado:
